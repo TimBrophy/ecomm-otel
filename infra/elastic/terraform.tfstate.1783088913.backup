@@ -1,0 +1,970 @@
+{
+  "version": 4,
+  "terraform_version": "1.15.4",
+  "serial": 67,
+  "lineage": "ff70dbc9-909d-6c92-de3f-758fd62de0c6",
+  "outputs": {
+    "apm_endpoint": {
+      "value": "https://ecomm-otel-demo-c4e571.apm.eu-central-1.aws.elastic.cloud",
+      "type": "string"
+    },
+    "elastic_endpoint": {
+      "value": "https://ecomm-otel-demo-c4e571.es.eu-central-1.aws.elastic.cloud",
+      "type": "string"
+    },
+    "elastic_project_id": {
+      "value": "c4e5714840e24c90a351c57780f4a59f",
+      "type": "string"
+    },
+    "ingest_endpoint": {
+      "value": "https://ecomm-otel-demo-c4e571.ingest.eu-central-1.aws.elastic.cloud",
+      "type": "string"
+    },
+    "kibana_endpoint": {
+      "value": "https://ecomm-otel-demo-c4e571.kb.eu-central-1.aws.elastic.cloud",
+      "type": "string"
+    },
+    "product_team_elastic_endpoint": {
+      "value": "https://ecomm-otel-demo-product-team-b9f27e.es.eu-central-1.aws.elastic.cloud",
+      "type": "string"
+    },
+    "product_team_kibana_endpoint": {
+      "value": "https://ecomm-otel-demo-product-team-b9f27e.kb.eu-central-1.aws.elastic.cloud",
+      "type": "string"
+    },
+    "product_team_project_id": {
+      "value": "b9f27ec3fc1b4d94b7d1b085e01c96a3",
+      "type": "string"
+    }
+  },
+  "resources": [
+    {
+      "mode": "managed",
+      "type": "ec_observability_project",
+      "name": "main",
+      "provider": "provider[\"registry.terraform.io/elastic/ec\"]",
+      "instances": [
+        {
+          "schema_version": 0,
+          "attributes": {
+            "alias": "ecomm-otel-demo",
+            "cloud_id": "ecomm-otel-demo:ZXUtY2VudHJhbC0xLmF3cy5lbGFzdGljLmNsb3VkJGM0ZTU3MTQ4NDBlMjRjOTBhMzUxYzU3NzgwZjRhNTlmLmVzJGM0ZTU3MTQ4NDBlMjRjOTBhMzUxYzU3NzgwZjRhNTlmLmti",
+            "credentials": {
+              "password": "XDf803GZvly9t0bzG6I1574O",
+              "username": "admin"
+            },
+            "endpoints": {
+              "apm": "https://ecomm-otel-demo-c4e571.apm.eu-central-1.aws.elastic.cloud",
+              "elasticsearch": "https://ecomm-otel-demo-c4e571.es.eu-central-1.aws.elastic.cloud",
+              "ingest": "https://ecomm-otel-demo-c4e571.ingest.eu-central-1.aws.elastic.cloud",
+              "kibana": "https://ecomm-otel-demo-c4e571.kb.eu-central-1.aws.elastic.cloud"
+            },
+            "id": "c4e5714840e24c90a351c57780f4a59f",
+            "metadata": {
+              "created_at": "2026-07-03 07:33:11.524394329 +0000 UTC",
+              "created_by": "317941322",
+              "organization_id": "317941322",
+              "suspended_at": null,
+              "suspended_reason": null,
+              "tags": {}
+            },
+            "name": "ecomm-otel-demo",
+            "private_endpoints": {
+              "apm": "https://ecomm-otel-demo-c4e571.apm.private.eu-central-1.aws.elastic.cloud",
+              "elasticsearch": "https://ecomm-otel-demo-c4e571.es.private.eu-central-1.aws.elastic.cloud",
+              "ingest": "https://ecomm-otel-demo-c4e571.ingest.private.eu-central-1.aws.elastic.cloud",
+              "kibana": "https://ecomm-otel-demo-c4e571.kb.private.eu-central-1.aws.elastic.cloud"
+            },
+            "product_tier": "complete",
+            "region_id": "aws-eu-central-1",
+            "traffic_filter_ids": null,
+            "type": "observability"
+          },
+          "sensitive_attributes": [
+            [
+              {
+                "type": "get_attr",
+                "value": "credentials"
+              },
+              {
+                "type": "get_attr",
+                "value": "password"
+              }
+            ]
+          ],
+          "identity_schema_version": 0
+        }
+      ]
+    },
+    {
+      "mode": "managed",
+      "type": "ec_observability_project",
+      "name": "product_team",
+      "provider": "provider[\"registry.terraform.io/elastic/ec\"]",
+      "instances": [
+        {
+          "schema_version": 0,
+          "attributes": {
+            "alias": "ecomm-otel-demo-product-team",
+            "cloud_id": "ecomm-otel-demo-product-team:ZXUtY2VudHJhbC0xLmF3cy5lbGFzdGljLmNsb3VkJGI5ZjI3ZWMzZmMxYjRkOTRiN2QxYjA4NWUwMWM5NmEzLmVzJGI5ZjI3ZWMzZmMxYjRkOTRiN2QxYjA4NWUwMWM5NmEzLmti",
+            "credentials": {
+              "password": "Q340yg987Ai08D3U1RZLiaHu",
+              "username": "admin"
+            },
+            "endpoints": {
+              "apm": "https://ecomm-otel-demo-product-team-b9f27e.apm.eu-central-1.aws.elastic.cloud",
+              "elasticsearch": "https://ecomm-otel-demo-product-team-b9f27e.es.eu-central-1.aws.elastic.cloud",
+              "ingest": "https://ecomm-otel-demo-product-team-b9f27e.ingest.eu-central-1.aws.elastic.cloud",
+              "kibana": "https://ecomm-otel-demo-product-team-b9f27e.kb.eu-central-1.aws.elastic.cloud"
+            },
+            "id": "b9f27ec3fc1b4d94b7d1b085e01c96a3",
+            "metadata": {
+              "created_at": "2026-07-03 12:24:01.514417395 +0000 UTC",
+              "created_by": "317941322",
+              "organization_id": "317941322",
+              "suspended_at": null,
+              "suspended_reason": null,
+              "tags": {}
+            },
+            "name": "ecomm-otel-demo-product-team",
+            "private_endpoints": {
+              "apm": "https://ecomm-otel-demo-product-team-b9f27e.apm.private.eu-central-1.aws.elastic.cloud",
+              "elasticsearch": "https://ecomm-otel-demo-product-team-b9f27e.es.private.eu-central-1.aws.elastic.cloud",
+              "ingest": "https://ecomm-otel-demo-product-team-b9f27e.ingest.private.eu-central-1.aws.elastic.cloud",
+              "kibana": "https://ecomm-otel-demo-product-team-b9f27e.kb.private.eu-central-1.aws.elastic.cloud"
+            },
+            "product_tier": "complete",
+            "region_id": "aws-eu-central-1",
+            "traffic_filter_ids": null,
+            "type": "observability"
+          },
+          "sensitive_attributes": [
+            [
+              {
+                "type": "get_attr",
+                "value": "credentials"
+              },
+              {
+                "type": "get_attr",
+                "value": "password"
+              }
+            ]
+          ],
+          "identity_schema_version": 0
+        }
+      ]
+    },
+    {
+      "mode": "managed",
+      "type": "elasticstack_kibana_dashboard",
+      "name": "product_team_overview",
+      "provider": "provider[\"registry.terraform.io/elastic/elasticstack\"].product_team",
+      "instances": [
+        {
+          "schema_version": 0,
+          "attributes": {
+            "access_control": null,
+            "dashboard_id": "28715d96-590f-41f1-b3f0-c0ff73ddf121",
+            "description": "Checkout throughput, order volume, and fraud detection impact — no p99 required.",
+            "filters": null,
+            "id": "default/28715d96-590f-41f1-b3f0-c0ff73ddf121",
+            "kibana_connection": [],
+            "options": null,
+            "panels": [
+              {
+                "config_json": "{\"content\":\"## Checkout Business Overview\\nReal-time view of checkout funnel health across all services. Data via Cross-Project Search from the platform observability project.\",\"settings\":{\"open_links_in_new_tab\":false}}",
+                "discover_session_config": null,
+                "esql_control_config": null,
+                "grid": {
+                  "h": 3,
+                  "w": 48,
+                  "x": 0,
+                  "y": 0
+                },
+                "id": "e3b4bbb8-77d9-430b-8101-7d8d8cb71b26",
+                "image_config": null,
+                "markdown_config": {
+                  "by_reference": null,
+                  "by_value": {
+                    "content": "## Checkout Business Overview\nReal-time view of checkout funnel health across all services. Data via Cross-Project Search from the platform observability project.",
+                    "description": null,
+                    "hide_border": null,
+                    "hide_title": null,
+                    "settings": {
+                      "open_links_in_new_tab": false
+                    },
+                    "title": null
+                  }
+                },
+                "options_list_control_config": null,
+                "range_slider_control_config": null,
+                "slo_alerts_config": null,
+                "slo_burn_rate_config": null,
+                "slo_error_budget_config": null,
+                "slo_overview_config": null,
+                "synthetics_monitors_config": null,
+                "synthetics_stats_overview_config": null,
+                "time_slider_control_config": null,
+                "type": "markdown",
+                "vis_config": null
+              },
+              {
+                "config_json": "{\"title\":\"Checkouts\",\"type\":\"data_table\",\"data_source\":{\"type\":\"esql\",\"query\":\"FROM traces-generic.otel-default | WHERE `resource.attributes.service.name` == \\\"checkout-service\\\" AND `span.name` == \\\"POST /checkout\\\" | STATS total = COUNT(*)\"},\"sampling\":1,\"ignore_global_filters\":false,\"metrics\":[{\"column\":\"total\"}],\"styling\":{\"density\":{\"mode\":\"compact\"}}}",
+                "discover_session_config": null,
+                "esql_control_config": null,
+                "grid": {
+                  "h": 5,
+                  "w": 12,
+                  "x": 0,
+                  "y": 3
+                },
+                "id": "0806afa0-9e9f-4e1c-903f-3ebdd435846d",
+                "image_config": null,
+                "markdown_config": null,
+                "options_list_control_config": null,
+                "range_slider_control_config": null,
+                "slo_alerts_config": null,
+                "slo_burn_rate_config": null,
+                "slo_error_budget_config": null,
+                "slo_overview_config": null,
+                "synthetics_monitors_config": null,
+                "synthetics_stats_overview_config": null,
+                "time_slider_control_config": null,
+                "type": "vis",
+                "vis_config": {
+                  "by_reference": null,
+                  "by_value": {
+                    "datatable_config": {
+                      "esql": {
+                        "data_source_json": "{\"query\":\"FROM traces-generic.otel-default | WHERE `resource.attributes.service.name` == \\\"checkout-service\\\" AND `span.name` == \\\"POST /checkout\\\" | STATS total = COUNT(*)\",\"type\":\"esql\"}",
+                        "description": null,
+                        "drilldowns": null,
+                        "filters": null,
+                        "hide_border": null,
+                        "hide_title": null,
+                        "ignore_global_filters": false,
+                        "metrics": [
+                          {
+                            "config_json": "{\"column\":\"total\",\"operation\":\"value\"}"
+                          }
+                        ],
+                        "references_json": null,
+                        "rows": null,
+                        "sampling": 1,
+                        "split_metrics_by": null,
+                        "styling": {
+                          "density": {
+                            "height": null,
+                            "mode": "compact"
+                          },
+                          "paging": null,
+                          "sort_by_json": null
+                        },
+                        "time_range": null,
+                        "title": "Checkouts"
+                      },
+                      "no_esql": null
+                    },
+                    "gauge_config": null,
+                    "heatmap_config": null,
+                    "legacy_metric_config": null,
+                    "metric_chart_config": null,
+                    "mosaic_config": null,
+                    "pie_chart_config": null,
+                    "region_map_config": null,
+                    "tagcloud_config": null,
+                    "treemap_config": null,
+                    "waffle_config": null,
+                    "xy_chart_config": null
+                  }
+                }
+              },
+              {
+                "config_json": "{\"title\":\"Avg Checkout Time (ms)\",\"type\":\"data_table\",\"data_source\":{\"type\":\"esql\",\"query\":\"FROM traces-generic.otel-default | WHERE `resource.attributes.service.name` == \\\"checkout-service\\\" AND `span.name` == \\\"POST /checkout\\\" | STATS avg_ms = ROUND(AVG(`duration`) / 1000000, 0)\"},\"sampling\":1,\"ignore_global_filters\":false,\"metrics\":[{\"column\":\"avg_ms\"}],\"styling\":{\"density\":{\"mode\":\"compact\"}}}",
+                "discover_session_config": null,
+                "esql_control_config": null,
+                "grid": {
+                  "h": 5,
+                  "w": 12,
+                  "x": 12,
+                  "y": 3
+                },
+                "id": "2ea657a2-1b6d-4393-b392-090eb144f642",
+                "image_config": null,
+                "markdown_config": null,
+                "options_list_control_config": null,
+                "range_slider_control_config": null,
+                "slo_alerts_config": null,
+                "slo_burn_rate_config": null,
+                "slo_error_budget_config": null,
+                "slo_overview_config": null,
+                "synthetics_monitors_config": null,
+                "synthetics_stats_overview_config": null,
+                "time_slider_control_config": null,
+                "type": "vis",
+                "vis_config": {
+                  "by_reference": null,
+                  "by_value": {
+                    "datatable_config": {
+                      "esql": {
+                        "data_source_json": "{\"query\":\"FROM traces-generic.otel-default | WHERE `resource.attributes.service.name` == \\\"checkout-service\\\" AND `span.name` == \\\"POST /checkout\\\" | STATS avg_ms = ROUND(AVG(`duration`) / 1000000, 0)\",\"type\":\"esql\"}",
+                        "description": null,
+                        "drilldowns": null,
+                        "filters": null,
+                        "hide_border": null,
+                        "hide_title": null,
+                        "ignore_global_filters": false,
+                        "metrics": [
+                          {
+                            "config_json": "{\"column\":\"avg_ms\",\"operation\":\"value\"}"
+                          }
+                        ],
+                        "references_json": null,
+                        "rows": null,
+                        "sampling": 1,
+                        "split_metrics_by": null,
+                        "styling": {
+                          "density": {
+                            "height": null,
+                            "mode": "compact"
+                          },
+                          "paging": null,
+                          "sort_by_json": null
+                        },
+                        "time_range": null,
+                        "title": "Avg Checkout Time (ms)"
+                      },
+                      "no_esql": null
+                    },
+                    "gauge_config": null,
+                    "heatmap_config": null,
+                    "legacy_metric_config": null,
+                    "metric_chart_config": null,
+                    "mosaic_config": null,
+                    "pie_chart_config": null,
+                    "region_map_config": null,
+                    "tagcloud_config": null,
+                    "treemap_config": null,
+                    "waffle_config": null,
+                    "xy_chart_config": null
+                  }
+                }
+              },
+              {
+                "config_json": "{\"title\":\"Orders Fulfilled\",\"type\":\"data_table\",\"data_source\":{\"type\":\"esql\",\"query\":\"FROM traces-generic.otel-default | WHERE `resource.attributes.service.name` == \\\"order-service\\\" AND `span.name` == \\\"POST /orders\\\" | STATS total = COUNT(*)\"},\"sampling\":1,\"ignore_global_filters\":false,\"metrics\":[{\"column\":\"total\"}],\"styling\":{\"density\":{\"mode\":\"compact\"}}}",
+                "discover_session_config": null,
+                "esql_control_config": null,
+                "grid": {
+                  "h": 5,
+                  "w": 12,
+                  "x": 24,
+                  "y": 3
+                },
+                "id": "95315425-21c5-453c-935f-ed60051872c1",
+                "image_config": null,
+                "markdown_config": null,
+                "options_list_control_config": null,
+                "range_slider_control_config": null,
+                "slo_alerts_config": null,
+                "slo_burn_rate_config": null,
+                "slo_error_budget_config": null,
+                "slo_overview_config": null,
+                "synthetics_monitors_config": null,
+                "synthetics_stats_overview_config": null,
+                "time_slider_control_config": null,
+                "type": "vis",
+                "vis_config": {
+                  "by_reference": null,
+                  "by_value": {
+                    "datatable_config": {
+                      "esql": {
+                        "data_source_json": "{\"query\":\"FROM traces-generic.otel-default | WHERE `resource.attributes.service.name` == \\\"order-service\\\" AND `span.name` == \\\"POST /orders\\\" | STATS total = COUNT(*)\",\"type\":\"esql\"}",
+                        "description": null,
+                        "drilldowns": null,
+                        "filters": null,
+                        "hide_border": null,
+                        "hide_title": null,
+                        "ignore_global_filters": false,
+                        "metrics": [
+                          {
+                            "config_json": "{\"column\":\"total\",\"operation\":\"value\"}"
+                          }
+                        ],
+                        "references_json": null,
+                        "rows": null,
+                        "sampling": 1,
+                        "split_metrics_by": null,
+                        "styling": {
+                          "density": {
+                            "height": null,
+                            "mode": "compact"
+                          },
+                          "paging": null,
+                          "sort_by_json": null
+                        },
+                        "time_range": null,
+                        "title": "Orders Fulfilled"
+                      },
+                      "no_esql": null
+                    },
+                    "gauge_config": null,
+                    "heatmap_config": null,
+                    "legacy_metric_config": null,
+                    "metric_chart_config": null,
+                    "mosaic_config": null,
+                    "pie_chart_config": null,
+                    "region_map_config": null,
+                    "tagcloud_config": null,
+                    "treemap_config": null,
+                    "waffle_config": null,
+                    "xy_chart_config": null
+                  }
+                }
+              },
+              {
+                "config_json": "{\"title\":\"P95 Checkout Latency (ms)\",\"type\":\"data_table\",\"data_source\":{\"type\":\"esql\",\"query\":\"FROM traces-generic.otel-default | WHERE `resource.attributes.service.name` == \\\"checkout-service\\\" AND `span.name` == \\\"POST /checkout\\\" | STATS p95_ms = ROUND(PERCENTILE(`duration`, 95) / 1000000, 0)\"},\"sampling\":1,\"ignore_global_filters\":false,\"metrics\":[{\"column\":\"p95_ms\"}],\"styling\":{\"density\":{\"mode\":\"compact\"}}}",
+                "discover_session_config": null,
+                "esql_control_config": null,
+                "grid": {
+                  "h": 5,
+                  "w": 12,
+                  "x": 36,
+                  "y": 3
+                },
+                "id": "358ac5ce-1bb1-4748-8cb0-4eef0f403437",
+                "image_config": null,
+                "markdown_config": null,
+                "options_list_control_config": null,
+                "range_slider_control_config": null,
+                "slo_alerts_config": null,
+                "slo_burn_rate_config": null,
+                "slo_error_budget_config": null,
+                "slo_overview_config": null,
+                "synthetics_monitors_config": null,
+                "synthetics_stats_overview_config": null,
+                "time_slider_control_config": null,
+                "type": "vis",
+                "vis_config": {
+                  "by_reference": null,
+                  "by_value": {
+                    "datatable_config": {
+                      "esql": {
+                        "data_source_json": "{\"query\":\"FROM traces-generic.otel-default | WHERE `resource.attributes.service.name` == \\\"checkout-service\\\" AND `span.name` == \\\"POST /checkout\\\" | STATS p95_ms = ROUND(PERCENTILE(`duration`, 95) / 1000000, 0)\",\"type\":\"esql\"}",
+                        "description": null,
+                        "drilldowns": null,
+                        "filters": null,
+                        "hide_border": null,
+                        "hide_title": null,
+                        "ignore_global_filters": false,
+                        "metrics": [
+                          {
+                            "config_json": "{\"column\":\"p95_ms\",\"operation\":\"value\"}"
+                          }
+                        ],
+                        "references_json": null,
+                        "rows": null,
+                        "sampling": 1,
+                        "split_metrics_by": null,
+                        "styling": {
+                          "density": {
+                            "height": null,
+                            "mode": "compact"
+                          },
+                          "paging": null,
+                          "sort_by_json": null
+                        },
+                        "time_range": null,
+                        "title": "P95 Checkout Latency (ms)"
+                      },
+                      "no_esql": null
+                    },
+                    "gauge_config": null,
+                    "heatmap_config": null,
+                    "legacy_metric_config": null,
+                    "metric_chart_config": null,
+                    "mosaic_config": null,
+                    "pie_chart_config": null,
+                    "region_map_config": null,
+                    "tagcloud_config": null,
+                    "treemap_config": null,
+                    "waffle_config": null,
+                    "xy_chart_config": null
+                  }
+                }
+              },
+              {
+                "config_json": "{\"title\":\"Checkout Throughput\",\"type\":\"xy\",\"layers\":[{\"type\":\"line\",\"data_source\":{\"type\":\"data_view_spec\",\"index_pattern\":\"traces-generic.otel-default\",\"time_field\":\"@timestamp\"},\"sampling\":1,\"ignore_global_filters\":false,\"x\":{\"operation\":\"date_histogram\",\"field\":\"@timestamp\",\"suggested_interval\":\"auto\",\"use_original_time_range\":false,\"include_empty_rows\":true,\"drop_partial_intervals\":false},\"y\":[{\"operation\":\"count\",\"empty_as_null\":false,\"format\":{\"type\":\"number\",\"decimals\":0,\"compact\":false},\"color\":{\"type\":\"auto\"}}]}],\"axis\":{\"x\":{\"title\":{\"visible\":false},\"ticks\":{\"visible\":true},\"grid\":{\"visible\":true},\"domain\":{\"type\":\"fit\",\"rounding\":false},\"labels\":{\"orientation\":\"horizontal\"}},\"y\":{\"title\":{\"text\":\"Requests / bucket\",\"visible\":true},\"scale\":\"linear\",\"ticks\":{\"visible\":true},\"grid\":{\"visible\":true},\"domain\":{\"type\":\"fit\",\"rounding\":true},\"labels\":{\"orientation\":\"horizontal\"}}},\"styling\":{\"overlays\":{\"partial_buckets\":{\"visible\":false},\"current_time_marker\":{\"visible\":false}},\"fitting\":{\"type\":\"none\"},\"interpolation\":\"linear\",\"points\":{\"visibility\":\"auto\"}},\"legend\":{\"placement\":\"outside\",\"position\":\"bottom\",\"layout\":{\"type\":\"grid\",\"truncate\":{\"max_lines\":1}},\"visibility\":\"auto\"},\"query\":{\"expression\":\"resource.attributes.service.name: \\\"checkout-service\\\" AND span.name: \\\"POST /checkout\\\"\",\"language\":\"kql\"}}",
+                "discover_session_config": null,
+                "esql_control_config": null,
+                "grid": {
+                  "h": 12,
+                  "w": 24,
+                  "x": 0,
+                  "y": 8
+                },
+                "id": "4b2bd3a2-12cf-4127-a9a7-10c7787ce94f",
+                "image_config": null,
+                "markdown_config": null,
+                "options_list_control_config": null,
+                "range_slider_control_config": null,
+                "slo_alerts_config": null,
+                "slo_burn_rate_config": null,
+                "slo_error_budget_config": null,
+                "slo_overview_config": null,
+                "synthetics_monitors_config": null,
+                "synthetics_stats_overview_config": null,
+                "time_slider_control_config": null,
+                "type": "vis",
+                "vis_config": {
+                  "by_reference": null,
+                  "by_value": {
+                    "datatable_config": null,
+                    "gauge_config": null,
+                    "heatmap_config": null,
+                    "legacy_metric_config": null,
+                    "metric_chart_config": null,
+                    "mosaic_config": null,
+                    "pie_chart_config": null,
+                    "region_map_config": null,
+                    "tagcloud_config": null,
+                    "treemap_config": null,
+                    "waffle_config": null,
+                    "xy_chart_config": {
+                      "axis": {
+                        "x": {
+                          "domain_json": "{\"type\":\"fit\",\"rounding\":false}",
+                          "grid": true,
+                          "label_orientation": "horizontal",
+                          "scale": null,
+                          "ticks": true,
+                          "title": {
+                            "value": "Time",
+                            "visible": false
+                          }
+                        },
+                        "y": {
+                          "domain_json": "{\"type\":\"fit\"}",
+                          "grid": null,
+                          "label_orientation": null,
+                          "scale": "linear",
+                          "ticks": null,
+                          "title": {
+                            "value": "Requests / bucket",
+                            "visible": true
+                          }
+                        },
+                        "y2": null
+                      },
+                      "decorations": {
+                        "fill_opacity": null,
+                        "line_interpolation": null,
+                        "minimum_bar_height": null,
+                        "point_visibility": null,
+                        "show_current_time_marker": null,
+                        "show_end_zones": null,
+                        "show_value_labels": null
+                      },
+                      "description": null,
+                      "drilldowns": null,
+                      "filters": null,
+                      "fitting": {
+                        "dotted": null,
+                        "end_value": null,
+                        "type": "none"
+                      },
+                      "hide_border": null,
+                      "hide_title": null,
+                      "layers": [
+                        {
+                          "data_layer": {
+                            "breakdown_by_json": null,
+                            "data_source_json": "{\"index_pattern\":\"traces-generic.otel-default\",\"time_field\":\"@timestamp\",\"type\":\"data_view_spec\"}",
+                            "ignore_global_filters": false,
+                            "sampling": 1,
+                            "x_json": "{\"drop_partial_intervals\":false,\"field\":\"@timestamp\",\"include_empty_rows\":true,\"operation\":\"date_histogram\",\"suggested_interval\":\"auto\",\"use_original_time_range\":false}",
+                            "y": [
+                              {
+                                "config_json": "{\"empty_as_null\":false,\"format\":{\"decimals\":0,\"type\":\"number\"},\"operation\":\"count\"}"
+                              }
+                            ]
+                          },
+                          "reference_line_layer": null,
+                          "type": "line"
+                        }
+                      ],
+                      "legend": {
+                        "alignment": null,
+                        "columns": null,
+                        "inside": false,
+                        "position": "bottom",
+                        "size": null,
+                        "statistics": null,
+                        "truncate_after_lines": null,
+                        "visibility": "auto"
+                      },
+                      "query": {
+                        "expression": "resource.attributes.service.name: \"checkout-service\" AND span.name: \"POST /checkout\"",
+                        "language": "kql"
+                      },
+                      "references_json": null,
+                      "time_range": null,
+                      "title": "Checkout Throughput"
+                    }
+                  }
+                }
+              },
+              {
+                "config_json": "{\"title\":\"Avg Checkout Latency (ns)\",\"type\":\"xy\",\"layers\":[{\"type\":\"line\",\"data_source\":{\"type\":\"data_view_spec\",\"index_pattern\":\"traces-generic.otel-default\",\"time_field\":\"@timestamp\"},\"sampling\":1,\"ignore_global_filters\":false,\"x\":{\"operation\":\"date_histogram\",\"field\":\"@timestamp\",\"suggested_interval\":\"auto\",\"use_original_time_range\":false,\"include_empty_rows\":false,\"drop_partial_intervals\":false},\"y\":[{\"operation\":\"average\",\"field\":\"duration\",\"color\":{\"type\":\"auto\"}}]}],\"axis\":{\"x\":{\"title\":{\"visible\":false},\"ticks\":{\"visible\":true},\"grid\":{\"visible\":true},\"domain\":{\"type\":\"fit\",\"rounding\":false},\"labels\":{\"orientation\":\"horizontal\"}},\"y\":{\"title\":{\"text\":\"Duration (ns)\",\"visible\":true},\"scale\":\"linear\",\"ticks\":{\"visible\":true},\"grid\":{\"visible\":true},\"domain\":{\"type\":\"fit\",\"rounding\":true},\"labels\":{\"orientation\":\"horizontal\"}}},\"styling\":{\"overlays\":{\"partial_buckets\":{\"visible\":false},\"current_time_marker\":{\"visible\":false}},\"fitting\":{\"type\":\"none\"},\"interpolation\":\"linear\",\"points\":{\"visibility\":\"auto\"}},\"legend\":{\"placement\":\"outside\",\"position\":\"bottom\",\"layout\":{\"type\":\"grid\",\"truncate\":{\"max_lines\":1}},\"visibility\":\"auto\"},\"query\":{\"expression\":\"resource.attributes.service.name: \\\"checkout-service\\\" AND span.name: \\\"POST /checkout\\\"\",\"language\":\"kql\"}}",
+                "discover_session_config": null,
+                "esql_control_config": null,
+                "grid": {
+                  "h": 12,
+                  "w": 24,
+                  "x": 24,
+                  "y": 8
+                },
+                "id": "438e14f7-daf4-46ed-a902-537f650e9a78",
+                "image_config": null,
+                "markdown_config": null,
+                "options_list_control_config": null,
+                "range_slider_control_config": null,
+                "slo_alerts_config": null,
+                "slo_burn_rate_config": null,
+                "slo_error_budget_config": null,
+                "slo_overview_config": null,
+                "synthetics_monitors_config": null,
+                "synthetics_stats_overview_config": null,
+                "time_slider_control_config": null,
+                "type": "vis",
+                "vis_config": {
+                  "by_reference": null,
+                  "by_value": {
+                    "datatable_config": null,
+                    "gauge_config": null,
+                    "heatmap_config": null,
+                    "legacy_metric_config": null,
+                    "metric_chart_config": null,
+                    "mosaic_config": null,
+                    "pie_chart_config": null,
+                    "region_map_config": null,
+                    "tagcloud_config": null,
+                    "treemap_config": null,
+                    "waffle_config": null,
+                    "xy_chart_config": {
+                      "axis": {
+                        "x": {
+                          "domain_json": "{\"type\":\"fit\",\"rounding\":false}",
+                          "grid": true,
+                          "label_orientation": "horizontal",
+                          "scale": null,
+                          "ticks": true,
+                          "title": {
+                            "value": "Time",
+                            "visible": false
+                          }
+                        },
+                        "y": {
+                          "domain_json": "{\"type\":\"fit\"}",
+                          "grid": null,
+                          "label_orientation": null,
+                          "scale": "linear",
+                          "ticks": null,
+                          "title": {
+                            "value": "Duration (ns)",
+                            "visible": true
+                          }
+                        },
+                        "y2": null
+                      },
+                      "decorations": {
+                        "fill_opacity": null,
+                        "line_interpolation": null,
+                        "minimum_bar_height": null,
+                        "point_visibility": null,
+                        "show_current_time_marker": null,
+                        "show_end_zones": null,
+                        "show_value_labels": null
+                      },
+                      "description": null,
+                      "drilldowns": null,
+                      "filters": null,
+                      "fitting": {
+                        "dotted": null,
+                        "end_value": null,
+                        "type": "none"
+                      },
+                      "hide_border": null,
+                      "hide_title": null,
+                      "layers": [
+                        {
+                          "data_layer": {
+                            "breakdown_by_json": null,
+                            "data_source_json": "{\"index_pattern\":\"traces-generic.otel-default\",\"time_field\":\"@timestamp\",\"type\":\"data_view_spec\"}",
+                            "ignore_global_filters": false,
+                            "sampling": 1,
+                            "x_json": "{\"drop_partial_intervals\":false,\"field\":\"@timestamp\",\"include_empty_rows\":false,\"operation\":\"date_histogram\",\"suggested_interval\":\"auto\",\"use_original_time_range\":false}",
+                            "y": [
+                              {
+                                "config_json": "{\"field\":\"duration\",\"operation\":\"average\"}"
+                              }
+                            ]
+                          },
+                          "reference_line_layer": null,
+                          "type": "line"
+                        }
+                      ],
+                      "legend": {
+                        "alignment": null,
+                        "columns": null,
+                        "inside": false,
+                        "position": "bottom",
+                        "size": null,
+                        "statistics": null,
+                        "truncate_after_lines": null,
+                        "visibility": "auto"
+                      },
+                      "query": {
+                        "expression": "resource.attributes.service.name: \"checkout-service\" AND span.name: \"POST /checkout\"",
+                        "language": "kql"
+                      },
+                      "references_json": null,
+                      "time_range": null,
+                      "title": "Avg Checkout Latency (ns)"
+                    }
+                  }
+                }
+              },
+              {
+                "config_json": "{\"title\":\"Fraud Detection: Avg Latency by Flag State (ms)\",\"type\":\"data_table\",\"data_source\":{\"type\":\"esql\",\"query\":\"FROM traces-generic.otel-default | WHERE `resource.attributes.service.name` == \\\"checkout-service\\\" AND `span.name` == \\\"POST /checkout\\\" | STATS avg_ms = ROUND(AVG(`duration`) / 1000000, 0) BY flag_state = `attributes.feature_flag.realtime_fraud_detection` | SORT avg_ms DESC\"},\"sampling\":1,\"ignore_global_filters\":false,\"metrics\":[{\"column\":\"avg_ms\"}],\"styling\":{\"density\":{\"mode\":\"default\"}}}",
+                "discover_session_config": null,
+                "esql_control_config": null,
+                "grid": {
+                  "h": 10,
+                  "w": 24,
+                  "x": 0,
+                  "y": 20
+                },
+                "id": "6d1d095b-2504-46b1-8ad5-5c2278e20951",
+                "image_config": null,
+                "markdown_config": null,
+                "options_list_control_config": null,
+                "range_slider_control_config": null,
+                "slo_alerts_config": null,
+                "slo_burn_rate_config": null,
+                "slo_error_budget_config": null,
+                "slo_overview_config": null,
+                "synthetics_monitors_config": null,
+                "synthetics_stats_overview_config": null,
+                "time_slider_control_config": null,
+                "type": "vis",
+                "vis_config": {
+                  "by_reference": null,
+                  "by_value": {
+                    "datatable_config": {
+                      "esql": {
+                        "data_source_json": "{\"query\":\"FROM traces-generic.otel-default | WHERE `resource.attributes.service.name` == \\\"checkout-service\\\" AND `span.name` == \\\"POST /checkout\\\" | STATS avg_ms = ROUND(AVG(`duration`) / 1000000, 0) BY flag_state = `attributes.feature_flag.realtime_fraud_detection` | SORT avg_ms DESC\",\"type\":\"esql\"}",
+                        "description": null,
+                        "drilldowns": null,
+                        "filters": null,
+                        "hide_border": null,
+                        "hide_title": null,
+                        "ignore_global_filters": false,
+                        "metrics": [
+                          {
+                            "config_json": "{\"column\":\"avg_ms\",\"operation\":\"value\"}"
+                          }
+                        ],
+                        "references_json": null,
+                        "rows": null,
+                        "sampling": 1,
+                        "split_metrics_by": null,
+                        "styling": {
+                          "density": {
+                            "height": null,
+                            "mode": "default"
+                          },
+                          "paging": null,
+                          "sort_by_json": null
+                        },
+                        "time_range": null,
+                        "title": "Fraud Detection: Avg Latency by Flag State (ms)"
+                      },
+                      "no_esql": null
+                    },
+                    "gauge_config": null,
+                    "heatmap_config": null,
+                    "legacy_metric_config": null,
+                    "metric_chart_config": null,
+                    "mosaic_config": null,
+                    "pie_chart_config": null,
+                    "region_map_config": null,
+                    "tagcloud_config": null,
+                    "treemap_config": null,
+                    "waffle_config": null,
+                    "xy_chart_config": null
+                  }
+                }
+              },
+              {
+                "config_json": "{\"title\":\"Request Volume by Service\",\"type\":\"data_table\",\"data_source\":{\"type\":\"esql\",\"query\":\"FROM traces-generic.otel-default | WHERE `resource.attributes.service.name` IN (\\\"api-gateway\\\", \\\"checkout-service\\\", \\\"order-service\\\", \\\"notification-service\\\") | STATS requests = COUNT(*) BY service = `resource.attributes.service.name` | SORT requests DESC\"},\"sampling\":1,\"ignore_global_filters\":false,\"metrics\":[{\"column\":\"requests\"}],\"styling\":{\"density\":{\"mode\":\"default\"}}}",
+                "discover_session_config": null,
+                "esql_control_config": null,
+                "grid": {
+                  "h": 10,
+                  "w": 24,
+                  "x": 24,
+                  "y": 20
+                },
+                "id": "c39a7221-8aa3-4574-830e-22482efeb4ea",
+                "image_config": null,
+                "markdown_config": null,
+                "options_list_control_config": null,
+                "range_slider_control_config": null,
+                "slo_alerts_config": null,
+                "slo_burn_rate_config": null,
+                "slo_error_budget_config": null,
+                "slo_overview_config": null,
+                "synthetics_monitors_config": null,
+                "synthetics_stats_overview_config": null,
+                "time_slider_control_config": null,
+                "type": "vis",
+                "vis_config": {
+                  "by_reference": null,
+                  "by_value": {
+                    "datatable_config": {
+                      "esql": {
+                        "data_source_json": "{\"query\":\"FROM traces-generic.otel-default | WHERE `resource.attributes.service.name` IN (\\\"api-gateway\\\", \\\"checkout-service\\\", \\\"order-service\\\", \\\"notification-service\\\") | STATS requests = COUNT(*) BY service = `resource.attributes.service.name` | SORT requests DESC\",\"type\":\"esql\"}",
+                        "description": null,
+                        "drilldowns": null,
+                        "filters": null,
+                        "hide_border": null,
+                        "hide_title": null,
+                        "ignore_global_filters": false,
+                        "metrics": [
+                          {
+                            "config_json": "{\"column\":\"requests\",\"operation\":\"value\"}"
+                          }
+                        ],
+                        "references_json": null,
+                        "rows": null,
+                        "sampling": 1,
+                        "split_metrics_by": null,
+                        "styling": {
+                          "density": {
+                            "height": null,
+                            "mode": "default"
+                          },
+                          "paging": null,
+                          "sort_by_json": null
+                        },
+                        "time_range": null,
+                        "title": "Request Volume by Service"
+                      },
+                      "no_esql": null
+                    },
+                    "gauge_config": null,
+                    "heatmap_config": null,
+                    "legacy_metric_config": null,
+                    "metric_chart_config": null,
+                    "mosaic_config": null,
+                    "pie_chart_config": null,
+                    "region_map_config": null,
+                    "tagcloud_config": null,
+                    "treemap_config": null,
+                    "waffle_config": null,
+                    "xy_chart_config": null
+                  }
+                }
+              }
+            ],
+            "pinned_panels": [],
+            "query": {
+              "json": null,
+              "language": "kql",
+              "text": ""
+            },
+            "refresh_interval": {
+              "pause": false,
+              "value": 60000
+            },
+            "sections": null,
+            "space_id": "default",
+            "tags": [
+              "product-team",
+              "checkout",
+              "business"
+            ],
+            "time_range": {
+              "from": "now-24h",
+              "mode": null,
+              "to": "now"
+            },
+            "title": "Checkout Business Overview"
+          },
+          "sensitive_attributes": [],
+          "identity_schema_version": 0
+        }
+      ]
+    },
+    {
+      "mode": "managed",
+      "type": "terraform_data",
+      "name": "cross_project_search",
+      "provider": "provider[\"terraform.io/builtin/terraform\"]",
+      "instances": [
+        {
+          "schema_version": 0,
+          "attributes": {
+            "id": "ecf02a93-8eff-95eb-6a6e-d044e407f935",
+            "input": {
+              "value": {
+                "product_team_project_id": "b9f27ec3fc1b4d94b7d1b085e01c96a3",
+                "request_body": "{\"linked\":{\"projects\":{\"c4e5714840e24c90a351c57780f4a59f\":{\"type\":\"observability\"}}}}"
+              },
+              "type": [
+                "object",
+                {
+                  "product_team_project_id": "string",
+                  "request_body": "string"
+                }
+              ]
+            },
+            "output": {
+              "value": {
+                "product_team_project_id": "b9f27ec3fc1b4d94b7d1b085e01c96a3",
+                "request_body": "{\"linked\":{\"projects\":{\"c4e5714840e24c90a351c57780f4a59f\":{\"type\":\"observability\"}}}}"
+              },
+              "type": [
+                "object",
+                {
+                  "product_team_project_id": "string",
+                  "request_body": "string"
+                }
+              ]
+            },
+            "triggers_replace": {
+              "value": {
+                "main_project_id": "c4e5714840e24c90a351c57780f4a59f",
+                "product_team_project_id": "b9f27ec3fc1b4d94b7d1b085e01c96a3"
+              },
+              "type": [
+                "object",
+                {
+                  "main_project_id": "string",
+                  "product_team_project_id": "string"
+                }
+              ]
+            }
+          },
+          "sensitive_attributes": [],
+          "identity_schema_version": 0,
+          "dependencies": [
+            "ec_observability_project.main",
+            "ec_observability_project.product_team"
+          ]
+        }
+      ]
+    }
+  ],
+  "check_results": null
+}

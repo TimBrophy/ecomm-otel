@@ -1,0 +1,44 @@
+.env
+.env.*
+!.env.example
+.elastic-credentials
+
+# Tooling / local session state
+.claude/
+.agents/
+.cursor/
+skills-lock.json
+hive-mind/
+
+# Terraform
+**/.terraform/
+*.tfstate
+*.tfstate.backup
+infra/bootstrap/.terraform/
+*.tfplan
+.terraform.lock.hcl
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+terraform.tfvars
+
+# Build artifacts
+**/target/
+**/dist/
+**/build/
+**/__pycache__/
+**/*.pyc
+**/node_modules/
+**/.gradle/
+
+# IDE
+.idea/
+.vscode/
+*.iml
+
+# OS
+.DS_Store
+
+# Presentation assets
+*.pdf

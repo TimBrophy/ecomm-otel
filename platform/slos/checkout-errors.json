@@ -1,0 +1,23 @@
+{
+  "name": "Checkout Service — Error Rate",
+  "description": "99.5% of checkout transactions must succeed. Tracks 5xx errors and outcome=failure spans.",
+  "indicator": {
+    "type": "sli.kql.custom",
+    "params": {
+      "index": "traces-*",
+      "filter": "resource.attributes.service.name: \"checkout-service\" AND attributes.processor.event: \"transaction\"",
+      "good": "attributes.event.outcome: \"success\"",
+      "total": "",
+      "timestampField": "@timestamp"
+    }
+  },
+  "timeWindow": {
+    "duration": "7d",
+    "type": "rolling"
+  },
+  "budgetingMethod": "occurrences",
+  "objective": {
+    "target": 0.995
+  },
+  "tags": ["checkout", "errors", "demo"]
+}

@@ -1,0 +1,177 @@
+# Local demo stack — all services run in Docker, collector forwards to Elastic Cloud.
+# Start with: ./scripts/demo.sh apply  (or docker compose up -d if project already exists)
+# Smoke test: docker compose logs collector
+
+x-otel-env: &otel-env
+  OTEL_EXPORTER_OTLP_ENDPOINT: http://collector:4317
+  OTEL_EXPORTER_OTLP_PROTOCOL: grpc
+  # Exclude host/os detectors — they try to read /var/lib/dbus/machine-id which
+  # doesn't exist in these containers and generates ENOENT noise in logs.
+  # Java agents silently ignore this; it is a Node.js-only env var.
+  OTEL_NODE_RESOURCE_DETECTORS: env,process,container
+
+services:
+
+  # ── EDOT Collector (OTLP ingestion) ──────────────────────────────────────────
+  # Receives OTLP from all services and forwards to Elastic Cloud via mOTLP.
+  # Keeps OTel semantic conventions intact for UC4 native storage story.
+  collector:
+    image: otel/opentelemetry-collector-contrib:0.155.0
+    command: ["--config=/etc/otel/otel-collector.yaml"]
+    volumes:
+      - ./collector/otel-collector.yaml:/etc/otel/otel-collector.yaml:ro
+    environment:
+      ELASTIC_INGEST_ENDPOINT: ${ELASTIC_INGEST_ENDPOINT:-}
+      ELASTIC_INGEST_API_KEY: ${ELASTIC_INGEST_API_KEY:-}
+    ports:
+      - "4327:4317"   # OTLP gRPC (host 4327 → container 4317)
+      - "4328:4318"   # OTLP HTTP (host 4328 → container 4318)
+      - "13134:13133" # health check
+
+  # ── Kafka (Confluent-compatible) ─────────────────────────────────────────────
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.6.0
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+    healthcheck:
+      test: ["CMD", "nc", "-z", "localhost", "2181"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  kafka:
+    image: confluentinc/cp-kafka:7.6.0
+    depends_on:
+      zookeeper:
+        condition: service_healthy
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+    healthcheck:
+      test: ["CMD", "kafka-broker-api-versions", "--bootstrap-server", "localhost:9092"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+
+  # ── Application services ─────────────────────────────────────────────────────
+  feature-flag-service:
+    build: ./services/feature-flag-service
+    environment:
+      PORT: "8090"
+      <<: *otel-env
+      OTEL_SERVICE_NAME: feature-flag-service
+    ports:
+      - "8090:8090"
+    depends_on:
+      - collector
+
+  api-gateway:
+    build: ./services/api-gateway
+    environment:
+      PORT: "8080"
+      PRODUCT_SERVICE_URL: http://product-service:8081
+      CHECKOUT_SERVICE_URL: http://checkout-service:8082
+      ORDER_SERVICE_URL: http://order-service:8083
+      FEATURE_FLAG_URL: http://feature-flag-service:8090
+      <<: *otel-env
+      OTEL_SERVICE_NAME: api-gateway
+    ports:
+      - "8080:8080"
+    depends_on:
+      - feature-flag-service
+      - collector
+
+  product-service:
+    build: ./services/product-service
+    environment:
+      PORT: "8081"
+      <<: *otel-env
+      OTEL_SERVICE_NAME: product-service
+    depends_on:
+      - collector
+
+  checkout-service:
+    build: ./services/checkout-service
+    environment:
+      PORT: "8082"
+      FEATURE_FLAG_SERVICE_URL: http://feature-flag-service:8090
+      ORDER_SERVICE_URL: http://order-service:8083
+      <<: *otel-env
+      OTEL_SERVICE_NAME: checkout-service
+      ELASTIC_OTEL_SPAN_STACK_TRACE_MIN_DURATION: "-1"
+    depends_on:
+      - feature-flag-service
+      - collector
+
+  order-service:
+    build: ./services/order-service
+    environment:
+      PORT: "8083"
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      <<: *otel-env
+      OTEL_SERVICE_NAME: order-service
+      ELASTIC_OTEL_SPAN_STACK_TRACE_MIN_DURATION: "-1"
+    depends_on:
+      kafka:
+        condition: service_healthy
+      collector:
+        condition: service_started
+
+  notification-service:
+    build: ./services/notification-service
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      KAFKA_GROUP_ID: notification-service
+      <<: *otel-env
+      OTEL_SERVICE_NAME: notification-service
+    depends_on:
+      kafka:
+        condition: service_healthy
+      collector:
+        condition: service_started
+
+  storefront:
+    build: ./services/storefront
+    environment:
+      PORT: "3000"
+      API_GATEWAY_URL: http://api-gateway:8080
+      EMBRACE_APP_ID: ${EMBRACE_APP_ID:-7dptb}
+      <<: *otel-env
+      OTEL_SERVICE_NAME: storefront
+    ports:
+      - "3000:3000"
+    depends_on:
+      - api-gateway
+
+  # ── Browser simulator (Playwright + Chromium) ────────────────────────────────
+  # Drives real browser sessions through the storefront so Embrace Web SDK fires
+  # genuine Core Web Vitals, network timing, and JS interaction events.
+  # Start with: docker compose --profile rum up -d browser-simulator
+  browser-simulator:
+    build: ./browser-simulator
+    environment:
+      STOREFRONT_URL: http://storefront:3000
+      CONCURRENCY: "3"
+      THINK_TIME_MS: "1500"
+    depends_on:
+      - storefront
+    profiles:
+      - rum
+
+  # ── Load generator ───────────────────────────────────────────────────────────
+  load-generator:
+    build: ./load-generator
+    environment:
+      TARGET_URL: http://storefront:3000
+      FLAG_SERVICE_URL: http://feature-flag-service:8090
+      SCENARIO: steady   # or: degraded
+      REQUESTS_PER_SECOND: "10"
+      PYTHONUNBUFFERED: "1"
+    depends_on:
+      - storefront
+    profiles:
+      - load  # opt-in: docker compose --profile load up
+

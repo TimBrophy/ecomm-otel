@@ -1,0 +1,28 @@
+{
+  "name": "Order Fulfilment Rate",
+  "description": "99.5% of order creation attempts must succeed. Drops when checkout timeouts prevent orders from being placed — business-readable proxy for the checkout incident impact.",
+  "indicator": {
+    "type": "sli.kql.custom",
+    "params": {
+      "index": "traces-*",
+      "filter": "resource.attributes.service.name: \"order-service\" AND kind: \"Server\"",
+      "good": "attributes.event.outcome: \"success\"",
+      "total": "",
+      "timestampField": "@timestamp"
+    }
+  },
+  "timeWindow": {
+    "duration": "7d",
+    "type": "rolling"
+  },
+  "budgetingMethod": "occurrences",
+  "objective": {
+    "target": 0.995
+  },
+  "tags": [
+    "business",
+    "orders",
+    "demo",
+    "uc2"
+  ]
+}

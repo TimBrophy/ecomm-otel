@@ -1,0 +1,9 @@
+{
+  "name": "browser-simulator",
+  "version": "1.0.0",
+  "main": "simulate.js",
+  "scripts": { "start": "node simulate.js" },
+  "dependencies": {
+    "playwright": "^1.49.0"
+  }
+}

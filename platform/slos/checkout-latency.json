@@ -1,0 +1,23 @@
+{
+  "name": "Checkout Service — P99 Latency",
+  "description": "99.9% of checkout transactions must complete within 1 second. Degrades during slow_query incidents.",
+  "indicator": {
+    "type": "sli.kql.custom",
+    "params": {
+      "index": "traces-*",
+      "filter": "resource.attributes.service.name: \"checkout-service\" AND attributes.processor.event: \"transaction\"",
+      "good": "attributes.transaction.duration.us < 1000000",
+      "total": "",
+      "timestampField": "@timestamp"
+    }
+  },
+  "timeWindow": {
+    "duration": "7d",
+    "type": "rolling"
+  },
+  "budgetingMethod": "occurrences",
+  "objective": {
+    "target": 0.999
+  },
+  "tags": ["checkout", "latency", "demo"]
+}

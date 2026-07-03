@@ -1,0 +1,33 @@
+{
+  "description": "Detects unusual spikes in error-tagged transactions across services. NOTE: In Elastic Serverless Observability, this job must be created via Kibana UI.",
+  "analysis_config": {
+    "bucket_span": "2m",
+    "detectors": [
+      {
+        "detector_description": "high_count errors by service",
+        "function": "high_count",
+        "partition_field_name": "resource.attributes.service.name"
+      }
+    ],
+    "influencers": ["resource.attributes.service.name", "attributes.transaction.name"]
+  },
+  "analysis_limits": {
+    "model_memory_limit": "64mb"
+  },
+  "data_description": {
+    "time_field": "@timestamp"
+  },
+  "datafeed_config": {
+    "indices": ["traces-*"],
+    "query": {
+      "bool": {
+        "filter": [
+          {"term": {"attributes.processor.event": "transaction"}}
+        ],
+        "must_not": [
+          {"term": {"attributes.event.outcome": "success"}}
+        ]
+      }
+    }
+  }
+}

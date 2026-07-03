@@ -1,0 +1,83 @@
+# EDOT Collector — OTLP ingestion + host metrics (standalone, no Fleet required).
+# Start with: ./scripts/demo.sh apply  (or docker compose up -d if project already exists)
+
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+
+  hostmetrics:
+    collection_interval: 60s
+    scrapers:
+      cpu: {}
+      memory: {}
+      load: {}
+      disk: {}
+      filesystem: {}
+      network: {}
+
+processors:
+  batch:
+    timeout: 5s
+    send_batch_size: 1000
+
+  memory_limiter:
+    check_interval: 1s
+    limit_mib: 512
+
+  resource:
+    attributes:
+      - key: deployment.environment
+        value: demo
+        action: upsert
+
+  # Adds host.name, os.type, host.arch to traces and app metrics so Kibana can
+  # correlate spans with host metrics collected by the Fleet-managed Elastic Agent.
+  # No host_metrics receiver needed — this is attribute enrichment only.
+  resourcedetection/system:
+    detectors: [system]
+    system:
+      hostname_sources: [os]
+    override: false
+
+  # Route logs into Kibana Streams' OTel-aware stream so field schema matches.
+  transform/logs-streams:
+    log_statements:
+      - context: resource
+        statements:
+          - set(attributes["elasticsearch.index"], "logs.otel")
+
+exporters:
+  # Primary: Elastic Cloud Serverless via managed OTLP (mOTLP) ingest endpoint
+  otlp_http/elastic:
+    endpoint: "${ELASTIC_INGEST_ENDPOINT}"
+    headers:
+      Authorization: "ApiKey ${ELASTIC_INGEST_API_KEY}"
+
+  debug:
+    verbosity: detailed
+
+extensions:
+  health_check:
+    endpoint: 0.0.0.0:13133
+  pprof:
+    endpoint: 0.0.0.0:1777
+
+service:
+  extensions: [health_check, pprof]
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [memory_limiter, resourcedetection/system, resource, batch]
+      exporters: [otlp_http/elastic, debug]
+    metrics:
+      receivers: [otlp, hostmetrics]
+      processors: [memory_limiter, resourcedetection/system, resource, batch]
+      exporters: [otlp_http/elastic, debug]
+    logs:
+      receivers: [otlp]
+      processors: [memory_limiter, resourcedetection/system, resource, transform/logs-streams, batch]
+      exporters: [otlp_http/elastic]

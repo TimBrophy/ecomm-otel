@@ -1,0 +1,23 @@
+{
+  "name": "API Gateway — Availability",
+  "description": "99.9% of API gateway requests must return a 2xx response. Provides end-to-end funnel visibility.",
+  "indicator": {
+    "type": "sli.kql.custom",
+    "params": {
+      "index": "traces-*",
+      "filter": "resource.attributes.service.name: \"api-gateway\" AND attributes.processor.event: \"transaction\"",
+      "good": "attributes.event.outcome: \"success\"",
+      "total": "",
+      "timestampField": "@timestamp"
+    }
+  },
+  "timeWindow": {
+    "duration": "7d",
+    "type": "rolling"
+  },
+  "budgetingMethod": "occurrences",
+  "objective": {
+    "target": 0.999
+  },
+  "tags": ["api-gateway", "availability", "demo"]
+}

@@ -1,0 +1,32 @@
+{
+  "description": "Detects unusually high latency on checkout-service transactions. Fires during slow_query incidents. NOTE: In Elastic Serverless Observability, anomaly detection jobs must be created via Kibana UI (Machine Learning > Anomaly Detection) — the generic ML API is not available via REST in Observability project types. This file serves as documentation for the job configuration.",
+  "analysis_config": {
+    "bucket_span": "2m",
+    "detectors": [
+      {
+        "detector_description": "high_mean latency on checkout-service",
+        "function": "high_mean",
+        "field_name": "attributes.transaction.duration.us",
+        "by_field_name": "resource.attributes.service.name"
+      }
+    ],
+    "influencers": ["resource.attributes.service.name", "attributes.transaction.name"]
+  },
+  "analysis_limits": {
+    "model_memory_limit": "128mb"
+  },
+  "data_description": {
+    "time_field": "@timestamp"
+  },
+  "datafeed_config": {
+    "indices": ["traces-*"],
+    "query": {
+      "bool": {
+        "filter": [
+          {"term": {"resource.attributes.service.name": "checkout-service"}},
+          {"term": {"attributes.processor.event": "transaction"}}
+        ]
+      }
+    }
+  }
+}

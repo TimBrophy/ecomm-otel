@@ -1,0 +1,32 @@
+{
+  "description": "Detects drops in order event throughput through Kafka. Fires when the order pipeline stalls. NOTE: In Elastic Serverless Observability, this job must be created via Kibana UI.",
+  "analysis_config": {
+    "bucket_span": "2m",
+    "detectors": [
+      {
+        "detector_description": "low_count Kafka order events",
+        "function": "low_count"
+      }
+    ],
+    "influencers": ["resource.attributes.service.name"]
+  },
+  "analysis_limits": {
+    "model_memory_limit": "32mb"
+  },
+  "data_description": {
+    "time_field": "@timestamp"
+  },
+  "datafeed_config": {
+    "indices": ["traces-*"],
+    "query": {
+      "bool": {
+        "should": [
+          {"term": {"attributes.messaging.system": "kafka"}},
+          {"term": {"span.attributes.messaging.system": "kafka"}},
+          {"term": {"span.subtype": "kafka"}}
+        ],
+        "minimum_should_match": 1
+      }
+    }
+  }
+}
