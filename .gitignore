@@ -42,3 +42,7 @@ terraform.tfvars
 
 # Presentation assets
 *.pdf
+session-manager-plugin.pkg
+infra/elastic/terraform.tfstate*.backup
+session-manager-plugin.pkg
+infra/elastic/terraform.tfstate*.backup
