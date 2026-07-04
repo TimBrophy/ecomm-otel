@@ -154,7 +154,7 @@ services:
     build: ./browser-simulator
     environment:
       STOREFRONT_URL: http://storefront:3000
-      CONCURRENCY: "3"
+      CONCURRENCY: "15"
       THINK_TIME_MS: "1500"
     depends_on:
       - storefront
