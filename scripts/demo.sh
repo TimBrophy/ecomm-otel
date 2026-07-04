@@ -754,6 +754,8 @@ tf_apply() {
   (cd "${ROOT_DIR}" && docker compose --profile load up -d load-generator)
   echo "→ Starting browser simulator (Playwright RUM)"
   (cd "${ROOT_DIR}" && docker compose --profile rum up -d browser-simulator)
+  echo "→ Starting mobile simulator (Playwright device emulation)"
+  (cd "${ROOT_DIR}" && docker compose --profile rum up -d mobile-simulator)
 
   # Wait for first traces to land before creating SLOs and ML jobs
   echo "→ Waiting 30s for initial traces to land..."

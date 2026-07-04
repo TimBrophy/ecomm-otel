@@ -161,6 +161,21 @@ services:
     profiles:
       - rum
 
+  # ── Mobile simulator (Playwright device emulation) ───────────────────────────
+  # Emulates iPhone and Android devices — distinct viewport, touch events, and
+  # user agents so Embrace reports a realistic mobile vs desktop traffic split.
+  # Includes 40% checkout abandonment to mirror real mobile behaviour.
+  mobile-simulator:
+    build: ./mobile-simulator
+    environment:
+      STOREFRONT_URL: http://storefront:3000
+      CONCURRENCY: "8"
+      THINK_TIME_MS: "2000"
+    depends_on:
+      - storefront
+    profiles:
+      - rum
+
   # ── Load generator ───────────────────────────────────────────────────────────
   load-generator:
     build: ./load-generator
