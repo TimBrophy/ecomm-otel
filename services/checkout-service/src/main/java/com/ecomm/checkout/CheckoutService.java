@@ -1,6 +1,9 @@
 package com.ecomm.checkout;
 
 import io.opentelemetry.api.GlobalOpenTelemetry;
+import io.opentelemetry.api.common.AttributeKey;
+import io.opentelemetry.api.common.Attributes;
+import io.opentelemetry.api.metrics.Meter;
 import io.opentelemetry.api.trace.Span;
 import io.opentelemetry.api.trace.SpanKind;
 import io.opentelemetry.api.trace.StatusCode;
@@ -18,6 +21,7 @@ import java.time.LocalDateTime;
 import java.util.Map;
 import java.util.Random;
 import java.util.UUID;
+import java.util.concurrent.Semaphore;
 
 @Service
 public class CheckoutService {
@@ -32,6 +36,25 @@ public class CheckoutService {
 
     private volatile boolean fraudDetectionEnabled = false;
 
+    // FraudShield's client SDK caps concurrent connections at 3 — a real limit
+    // vendors impose for rate-limiting/cost control. When the fraud check is
+    // active, requests queue for a slot instead of failing outright, which is
+    // what turns a single slow dependency into cascading checkout latency.
+    private static final int FRAUD_CHECK_POOL_SIZE = 3;
+    private final Semaphore fraudCheckPool = new Semaphore(FRAUD_CHECK_POOL_SIZE, true);
+
+    // Last-observed end-to-end checkout latency, split by feature flag state.
+    // Simple last-value gauges — no cumulative-counter semantics to misread.
+    // A state stops being reported once it's gone stale (no traffic in
+    // STALE_THRESHOLD_MS), otherwise a state that stopped receiving traffic
+    // (e.g. after the flag is reset) would keep reporting its frozen last
+    // value forever and silently skew every aggregate that includes it.
+    private static final long STALE_THRESHOLD_MS = 10_000;
+    private volatile long lastLatencyMsFlagOn = 0;
+    private volatile long lastLatencyMsFlagOff = 0;
+    private volatile long lastUpdatedFlagOnMillis = 0;
+    private volatile long lastUpdatedFlagOffMillis = 0;
+
     public CheckoutService(RestTemplate restTemplate,
                            CheckoutRepository checkoutRepository,
                            @Value("${feature-flag.service-url}") String featureFlagServiceUrl,
@@ -40,6 +63,35 @@ public class CheckoutService {
         this.checkoutRepository = checkoutRepository;
         this.featureFlagServiceUrl = featureFlagServiceUrl;
         this.orderServiceUrl = orderServiceUrl;
+
+        Meter meter = GlobalOpenTelemetry.getMeter("checkout-service");
+        meter.gaugeBuilder("fraud_check.pool.active_connections")
+                .ofLongs()
+                .setDescription("In-flight calls holding a FraudShield connection pool slot")
+                .setUnit("{connection}")
+                .buildWithCallback(measurement ->
+                        measurement.record(FRAUD_CHECK_POOL_SIZE - fraudCheckPool.availablePermits()));
+        meter.gaugeBuilder("fraud_check.pool.queued_requests")
+                .ofLongs()
+                .setDescription("Requests waiting for a free FraudShield connection pool slot")
+                .setUnit("{request}")
+                .buildWithCallback(measurement ->
+                        measurement.record(fraudCheckPool.getQueueLength()));
+        meter.gaugeBuilder("checkout.latency_ms")
+                .ofLongs()
+                .setDescription("Most recently observed end-to-end checkout processing time, by feature flag state")
+                .setUnit("ms")
+                .buildWithCallback(measurement -> {
+                    long now = System.currentTimeMillis();
+                    if (now - lastUpdatedFlagOnMillis < STALE_THRESHOLD_MS) {
+                        measurement.record(lastLatencyMsFlagOn,
+                                Attributes.of(AttributeKey.booleanKey("feature_flag.realtime_fraud_detection"), true));
+                    }
+                    if (now - lastUpdatedFlagOffMillis < STALE_THRESHOLD_MS) {
+                        measurement.record(lastLatencyMsFlagOff,
+                                Attributes.of(AttributeKey.booleanKey("feature_flag.realtime_fraud_detection"), false));
+                    }
+                });
     }
 
     // -------------------------------------------------------------------------
@@ -83,6 +135,7 @@ public class CheckoutService {
      * Kafka producer lag downstream.
      */
     public CheckoutResponse processCheckout(CheckoutRequest req) {
+        long startNanos = System.nanoTime();
         Span currentSpan = Span.current();
 
         // PII attributes — intentional for the masking demo
@@ -128,6 +181,15 @@ public class CheckoutService {
             log.warn("Could not reach order-service orderId={}: {}", orderId, e.getMessage());
         }
 
+        long latencyMs = (System.nanoTime() - startNanos) / 1_000_000;
+        if (fraudDetectionEnabled) {
+            lastLatencyMsFlagOn = latencyMs;
+            lastUpdatedFlagOnMillis = System.currentTimeMillis();
+        } else {
+            lastLatencyMsFlagOff = latencyMs;
+            lastUpdatedFlagOffMillis = System.currentTimeMillis();
+        }
+
         return new CheckoutResponse(orderId, "confirmed", req.getTotalAmount());
     }
 
@@ -146,29 +208,39 @@ public class CheckoutService {
             fraudSpan.setAttribute("peer.service", "fraud-shield-api");
             fraudSpan.setAttribute("server.address", "api.fraudshield.io");
 
-            // Simulate variable API latency (400–900 ms)
-            int delayMs = 400 + random.nextInt(500);
-            fraudSpan.setAttribute("fraud_check.duration_ms", delayMs);
+            long waitStart = System.nanoTime();
+            fraudCheckPool.acquire();
+            long waitMs = (System.nanoTime() - waitStart) / 1_000_000;
+            fraudSpan.setAttribute("fraud_check.pool_wait_ms", waitMs);
 
             try {
-                Thread.sleep(delayMs);
-            } catch (InterruptedException ie) {
-                Thread.currentThread().interrupt();
+                // Simulate variable API latency (400–900 ms)
+                int delayMs = 400 + random.nextInt(500);
+                fraudSpan.setAttribute("fraud_check.duration_ms", delayMs);
+
+                try {
+                    Thread.sleep(delayMs);
+                } catch (InterruptedException ie) {
+                    Thread.currentThread().interrupt();
+                }
+
+                // 8% of requests time out — recorded as a span error
+                if (random.nextInt(100) < 8) {
+                    String errMsg = "FraudShield API did not respond within 900ms";
+                    fraudSpan.setAttribute("fraud_check.result", "timeout");
+                    fraudSpan.setStatus(StatusCode.ERROR, errMsg);
+                    fraudSpan.recordException(new RuntimeException("FraudCheckTimeoutException: " + errMsg));
+                    log.error("fraud_check_timeout=true fraud_check.provider=FraudShield email={} fraud_check_duration_ms={}", email, delayMs);
+                    throw new RuntimeException("FraudCheckTimeoutException: " + errMsg);
+                }
+
+                fraudSpan.setAttribute("fraud_check.result", "approved");
+                log.warn("fraud_check_duration_ms={} fraud_check.provider=FraudShield result=approved email={}", delayMs, email);
+            } finally {
+                fraudCheckPool.release();
             }
-
-            // 8% of requests time out — recorded as a span error
-            if (random.nextInt(100) < 8) {
-                String errMsg = "FraudShield API did not respond within 900ms";
-                fraudSpan.setAttribute("fraud_check.result", "timeout");
-                fraudSpan.setStatus(StatusCode.ERROR, errMsg);
-                fraudSpan.recordException(new RuntimeException("FraudCheckTimeoutException: " + errMsg));
-                log.error("fraud_check_timeout=true fraud_check.provider=FraudShield email={} fraud_check_duration_ms={}", email, delayMs);
-                throw new RuntimeException("FraudCheckTimeoutException: " + errMsg);
-            }
-
-            fraudSpan.setAttribute("fraud_check.result", "approved");
-            log.warn("fraud_check_duration_ms={} fraud_check.provider=FraudShield result=approved email={}", delayMs, email);
-
+        } catch (InterruptedException ie) {
+            Thread.currentThread().interrupt();
         } finally {
             fraudSpan.end();
         }

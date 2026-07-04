@@ -1071,6 +1071,7 @@ trigger_incident() {
   echo "→ Triggering incident: realtime_fraud_detection=true"
   echo "  This enables a synchronous fraud check on every checkout:"
   echo "  • checkout-service: +400–900ms latency per request, 8% timeout errors"
+  echo "    (more under concurrent load — only 3 FraudShield pool slots, requests queue for one)"
   echo "  • order-service:    +100–300ms backpressure, Kafka producer lag"
   echo "  • notification-service: downstream delay on order confirmations"
   curl -sf -X POST "${FLAG_URL}/flags" \

@@ -188,6 +188,7 @@ All services → **EDOT collectors** → **Elastic Cloud Serverless (Observabili
 - Backend spans across `checkout-service`, `order-service`, Kafka producer/consumer
 - PII field masking on `checkout-service` (card number, email)
 - Ad-hoc ES|QL log query during investigation ("find all errors in the last 15 min for checkout")
+- Ad-hoc PromQL query showing checkout latency grouped by the `realtime_fraud_detection` flag state (`checkout.latency_ms`) — same OTel metrics, no separate Prometheus server
 - Distributed profiling (Universal Profiling) showing hot method in Java service
 - Root cause: feature flag toggle or deployment event visible in timeline
 

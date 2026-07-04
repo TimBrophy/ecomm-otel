@@ -173,7 +173,7 @@ The `realtime_fraud_detection` flag simulates a compliance feature that was rush
 
 | Layer | What breaks | Signal in Elastic |
 |---|---|---|
-| `checkout-service` | Synchronous fraud API call adds 400–900ms + 8% timeouts | `fraud_check` child span with `peer.service=fraud-shield-api`; timeout errors as span exceptions |
+| `checkout-service` | Synchronous fraud API call adds 400–900ms + 8% timeouts. The call also holds one of only 3 concurrent connections in FraudShield's client SDK pool — under concurrent load, requests queue for a slot, pushing latency past 900ms | `fraud_check` child span with `peer.service=fraud-shield-api`; timeout errors as span exceptions; pool saturation visible via `fraud_check.pool.active_connections` / `fraud_check.pool.queued_requests`; end-to-end impact visible via `checkout.latency_ms` grouped by flag state (all PromQL-queryable) |
 | `order-service` | Downstream backpressure from slower checkouts | `order.processing_delayed=true` span attribute; structured log `fraud_detection_backpressure=true` |
 | Kafka | Producer lag grows as order-service slows | Kafka semantic convention spans show increasing offsets |
 
