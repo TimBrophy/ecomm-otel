@@ -52,7 +52,10 @@ es_hit() {
 }
 
 http_status() {
-  curl -sf -o /dev/null -w "%{http_code}" "$@" 2>/dev/null || echo "000"
+  # No -f: we want the real status code on 4xx/5xx, not just a curl failure.
+  # curl itself prints "000" via %{http_code} when no response is received,
+  # so the || fallback only covers curl invocation errors.
+  curl -s -o /dev/null -w "%{http_code}" "$@" 2>/dev/null || echo "000"
 }
 
 # ── INFRASTRUCTURE ─────────────────────────────────────────────────────────────
@@ -119,11 +122,11 @@ else
     fail "traces-* is empty — collector may not be exporting"
   fi
 
-  LOG_COUNT=$(es_count "logs-*")
+  LOG_COUNT=$(es_count "logs*")
   if [[ "${LOG_COUNT}" -gt 0 ]]; then
-    pass "logs-* has ${LOG_COUNT} documents"
+    pass "logs* has ${LOG_COUNT} documents"
   else
-    fail "logs-* is empty"
+    fail "logs* is empty"
   fi
 
   METRIC_COUNT=$(es_count "metrics-*")
@@ -341,19 +344,19 @@ section "UC3: Product team project — endpoints configured"
 if [[ -z "${PT_ES_URL}" || -z "${PT_KIBANA_URL}" ]]; then
   skip "PRODUCT_TEAM_ES_URL / PRODUCT_TEAM_KIBANA_URL not set — run 'provision-product-team'"
 else
-  PT_ES_STATUS=$(curl -sf -o /dev/null -w "%{http_code}" \
-    -H "Authorization: ApiKey ${PT_API_KEY}" \
-    "${PT_ES_URL}/_cluster/health" 2>/dev/null || echo "000")
+  # _cluster/health is not available on Serverless (api_not_available_exception).
+  # Root endpoint is a lightweight, Serverless-compatible reachability check.
+  PT_ES_STATUS=$(http_status -H "Authorization: ApiKey ${PT_API_KEY}" "${PT_ES_URL}/")
   if [[ "${PT_ES_STATUS}" == "200" ]]; then
     pass "Product team Elasticsearch reachable"
   else
     fail "Product team Elasticsearch returned HTTP ${PT_ES_STATUS}"
   fi
 
-  PT_KB_STATUS=$(curl -sf -o /dev/null -w "%{http_code}" \
+  PT_KB_STATUS=$(http_status \
     -H "Authorization: ApiKey ${PT_API_KEY}" \
     -H "kbn-xsrf: true" \
-    "${PT_KIBANA_URL}/api/status" 2>/dev/null || echo "000")
+    "${PT_KIBANA_URL}/api/status")
   if [[ "${PT_KB_STATUS}" == "200" ]]; then
     pass "Product team Kibana reachable"
   else
@@ -363,11 +366,14 @@ fi
 
 section "UC3: Cross-Project Search — product team queries platform traces"
 
-if [[ -z "${PT_ES_URL}" || -z "${PT_API_KEY}" ]]; then
+if [[ -z "${PT_ES_URL}" || -z "${EC_API_KEY:-}" ]]; then
   skip "Product team credentials not set — run 'provision-product-team'"
 else
+  # CPS is unavailable to project-scoped Elasticsearch API keys (PT_API_KEY) —
+  # it requires an Elastic Cloud API key with "Cloud, Elasticsearch, and Kibana
+  # API" access, scoped to both projects. EC_API_KEY is that key.
   CPS_RESP=$(curl -sf -X POST \
-    -H "Authorization: ApiKey ${PT_API_KEY}" \
+    -H "Authorization: ApiKey ${EC_API_KEY}" \
     -H "Content-Type: application/json" \
     "${PT_ES_URL}/_query" \
     -d '{"query":"FROM traces-generic.otel-default | STATS count = COUNT(*) | LIMIT 1"}' \
@@ -389,13 +395,15 @@ section "UC3: Product team Kibana — Checkout Business Overview dashboard deplo
 if [[ -z "${PT_KIBANA_URL}" || -z "${PT_API_KEY}" ]]; then
   skip "Product team credentials not set — run 'provision-product-team'"
 else
-  DASH_RESP=$(curl -sf \
+  # _find is unavailable on this Serverless build; use _export instead.
+  DASH_RESP=$(curl -sf -X POST \
     -H "Authorization: ApiKey ${PT_API_KEY}" \
     -H "kbn-xsrf: true" \
-    "${PT_KIBANA_URL}/api/saved_objects/_find?type=dashboard&search=Checkout+Business+Overview&search_fields=title" \
-    2>/dev/null || echo '{"total":0}')
-  DASH_COUNT=$(echo "${DASH_RESP}" | python3 -c "
-import sys,json; print(json.load(sys.stdin).get('total',0))" 2>/dev/null || echo "0")
+    -H "Content-Type: application/json" \
+    "${PT_KIBANA_URL}/api/saved_objects/_export" \
+    -d '{"type":["dashboard"]}' \
+    2>/dev/null || echo "")
+  DASH_COUNT=$(echo "${DASH_RESP}" | grep -c '"title":"Checkout Business Overview"' || echo "0")
   if [[ "${DASH_COUNT}" -gt 0 ]]; then
     pass "Checkout Business Overview dashboard present in product team Kibana"
   else
