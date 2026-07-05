@@ -58,6 +58,8 @@ async function runSession(browser, id) {
   } catch (err) {
     console.error(`[session ${id}] error: ${err.message}`);
   } finally {
+    // Give the Embrace SDK time to flush its beacon before the context closes
+    await sleep(2000);
     await context.close();
   }
 }

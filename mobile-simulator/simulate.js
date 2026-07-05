@@ -64,6 +64,7 @@ async function runSession(browser, id) {
     // ── 40% abandonment rate — realistic mobile behaviour ────────────────
     if (Math.random() < 0.4) {
       console.log(`[mobile ${id}] abandoned at product (${device.userAgent.match(/iPhone|Android|Pixel|Galaxy/)?.[0] ?? 'mobile'})`);
+      await sleep(2000);
       return;
     }
 
@@ -88,6 +89,8 @@ async function runSession(browser, id) {
   } catch (err) {
     console.error(`[mobile ${id}] error: ${err.message}`);
   } finally {
+    // Give the Embrace SDK time to flush its beacon before the context closes
+    await sleep(2000);
     await context.close();
   }
 }
