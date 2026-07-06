@@ -39,7 +39,7 @@ locals {
 
 resource "elasticstack_kibana_dashboard" "product_team_overview" {
   provider = elasticstack.product_team
-  count    = var.product_team_kibana_endpoint != "" ? 1 : 0
+  count    = (var.product_team_kibana_endpoint != "" && var.product_team_api_key != "") ? 1 : 0
 
   title = "Checkout Business Overview"
   description  = "Checkout throughput, order volume, and fraud detection impact — no p99 required."
