@@ -78,7 +78,8 @@ This is the only command you need to run. It does everything in order:
 | 1 | Terraform apply (pass 2) | Deploys Kibana resources + Slack connector (if configured) |
 | 1 | Docker Compose | Starts all 9 services + load generator |
 | 1 | SLOs | Deploys 4 SLOs (checkout latency, error rate, API gateway availability, order fulfilment rate) |
-| 1 | Alert rules | Deploys 3 alert rules wired to Slack connector if present |
+| 1 | Alert rules | Deploys 4 alert rules wired to Slack connector if present |
+| 1 | Product team project | Creates the product-team Serverless project, links it via Cross-Project Search, deploys the Checkout Business Overview dashboard |
 | 2 | Fleet policy | Creates Fleet agent policy + system integration via Kibana API |
 | 2 | EC2 instance | Launches Amazon Linux 2023 with Elastic Agent 9.4.3 enrolled to Fleet |
 
@@ -144,6 +145,7 @@ Single confirmation, destroys everything in the right order: AWS first (while cr
 | `provision-alerts` | Re-deploy alert rules to Kibana |
 | `provision-spaces` | Re-deploy Kibana spaces |
 | `provision-rbac` | Re-deploy Kibana RBAC roles |
+| `provision-product-team` | Create/update the product-team Serverless project, configure Cross-Project Search, deploy the Checkout Business Overview dashboard |
 | `provision-team` | Push team layer to `product-team` space: checkout funnel + Business Overview (9 Lens panels) |
 | `provision-fleet` | Re-create Fleet agent policy + system integration |
 | `provision-ml` | Print ML job reference configs (UI-only in Serverless) |
