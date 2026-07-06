@@ -650,7 +650,7 @@ provision_workflows() {
   for WF_FILE in "${WF_DIR}"/*.yaml; do
     [[ -f "${WF_FILE}" ]] || continue
     local WF_NAME
-    WF_NAME=$(python3 -c "import yaml; print(yaml.safe_load(open('${WF_FILE}'))['name'])" 2>/dev/null)
+    WF_NAME=$(grep "^name:" "${WF_FILE}" | head -1 | sed 's/^name:[[:space:]]*//')
 
     local EXISTING_WF_ID
     EXISTING_WF_ID=$(curl -sf "${KIBANA}/api/workflows?query=${WF_NAME}" \
