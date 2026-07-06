@@ -1418,62 +1418,58 @@ _ssm_run() {
 
 deploy_profiling_stress() {
   echo "→ Deploying checkout stress workload to profiling host"
-  local INSTANCE_ID
+  local INSTANCE_ID REGION
+  REGION="${AWS_REGION:-eu-central-1}"
   INSTANCE_ID=$(cd "${ROOT_DIR}/infra/aws" && terraform output -raw profiling_host_instance_id 2>/dev/null || echo "")
   if [[ -z "${INSTANCE_ID}" || "${INSTANCE_ID}" == "pending" ]]; then
     echo "  ✗ EC2 profiling host not provisioned — run 'apply-aws' first"
     return 1
   fi
 
-  local JAVA_SRC
-  JAVA_SRC=$(cat "${ROOT_DIR}/infra/aws/profiling-stress/CheckoutStress.java")
+  # Base64-encode the Java source so it survives SSM JSON quoting
+  local JAVA_B64
+  JAVA_B64=$(base64 < "${ROOT_DIR}/infra/aws/profiling-stress/CheckoutStress.java" | tr -d '\n')
 
-  # Escape the source for SSM JSON — replace \ with \\, " with \", newlines with \n
-  local JAVA_SRC_ESCAPED
-  JAVA_SRC_ESCAPED=$(echo "${JAVA_SRC}" | python3 -c "
-import sys
-src = sys.stdin.read()
-src = src.replace('\\\\', '\\\\\\\\').replace('\"', '\\\\\"').replace('\n', '\\\\n')
-print(src)
-")
+  # Build a JSON commands array — each element is one shell line
+  local PARAMS
+  PARAMS=$(python3 -c "
+import json
+cmds = [
+    'set -e',
+    'dnf install -y java-21-amazon-corretto-devel 2>/dev/null || true',
+    'mkdir -p /opt/checkout-stress',
+    'echo ${JAVA_B64} | base64 -d > /opt/checkout-stress/CheckoutStress.java',
+    'cd /opt/checkout-stress && javac CheckoutStress.java',
+    'pkill -f CheckoutStress 2>/dev/null || true',
+    'sleep 1',
+    'nohup java -cp /opt/checkout-stress CheckoutStress > /var/log/checkout-stress.log 2>&1 &',
+    'echo checkout-stress started',
+]
+print(json.dumps({'commands': cmds}))
+" 2>/dev/null)
 
-  # Single SSM command: install Java, write source, compile, start as daemon
-  local DEPLOY_CMD="set -e
-dnf install -y java-21-amazon-corretto-headless 2>/dev/null || true
-mkdir -p /opt/checkout-stress
-cat > /opt/checkout-stress/CheckoutStress.java << 'JAVASRC'
-${JAVA_SRC}
-JAVASRC
-cd /opt/checkout-stress
-javac CheckoutStress.java
-# Stop any existing instance
-pkill -f CheckoutStress 2>/dev/null || true
-sleep 1
-# Start as background daemon
-nohup java -cp . CheckoutStress > /var/log/checkout-stress.log 2>&1 &
-echo Checkout stress workload started"
-
-  echo "  Uploading and starting via SSM (this takes ~30s)..."
+  echo "  Uploading via SSM (Java install + compile takes ~60s on first run)..."
   local CMD_ID
   CMD_ID=$(aws ssm send-command \
-    --region "${AWS_REGION:-eu-central-1}" \
+    --region "${REGION}" \
     --instance-ids "${INSTANCE_ID}" \
     --document-name "AWS-RunShellScript" \
-    --parameters "commands=[\"${DEPLOY_CMD}\"]" \
+    --cli-input-json "{\"DocumentName\":\"AWS-RunShellScript\",\"InstanceIds\":[\"${INSTANCE_ID}\"],\"Parameters\":${PARAMS}}" \
     --output text \
-    --query "Command.CommandId" 2>/dev/null || echo "")
+    --query "Command.CommandId" 2>&1 || echo "")
 
-  if [[ -z "${CMD_ID}" ]]; then
-    echo "  ✗ SSM send-command failed — check AWS credentials and instance connectivity"
+  if [[ -z "${CMD_ID}" ]] || echo "${CMD_ID}" | grep -q "Error\|error"; then
+    echo "  ✗ SSM send-command failed:"
+    echo "    ${CMD_ID}"
     return 1
   fi
 
   echo "  SSM command ID: ${CMD_ID}"
-  echo "  ✓ Stress workload deploying. Check status:"
-  echo "    aws ssm get-command-invocation --command-id ${CMD_ID} --instance-id ${INSTANCE_ID} --region ${AWS_REGION:-eu-central-1}"
-  echo "  Profiling data will appear in Kibana > Observability > Universal Profiling within ~2 min."
-  echo "  Normal mode: validateCart / fetchProductPrices / processPayment / createOrder are balanced."
-  echo "  Slow mode (mirrors trigger-incident): run './scripts/demo.sh trigger-incident'"
+  echo "  ✓ Stress workload deploying. Poll status with:"
+  echo "    aws ssm get-command-invocation --command-id ${CMD_ID} --instance-id ${INSTANCE_ID} --region ${REGION}"
+  echo "  Profiling data appears in Kibana > Observability > Universal Profiling within ~2 min."
+  echo "  Normal mode : validateCart / fetchProductPrices / processPayment / createOrder are balanced"
+  echo "  Slow mode   : run './scripts/demo.sh trigger-incident' — fraudShieldApiCall dominates"
 }
 
 trigger_incident() {
