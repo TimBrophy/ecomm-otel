@@ -13,7 +13,7 @@
 # 1. Confirm all containers are up
 docker compose ps
 
-# 2. Run smoke tests — must be 30/30 before you start
+# 2. Run smoke tests — must be 43/43 before you start
 ./scripts/demo.sh test
 
 # 3. Confirm data is fresh (last 5 min)
@@ -297,10 +297,11 @@ Run in terminal:
 
 Navigate: **Observability > SLOs**
 
-Three SLOs are pre-provisioned:
+Four SLOs are pre-provisioned:
 - **Checkout Service — P99 Latency** (target: 95% of requests under 500ms)
 - **Checkout Service — Error Rate** (target: 99% success rate)
 - **API Gateway — Availability** (target: 99.9% uptime)
+- **Order Fulfilment Rate** (target: 99.5% of orders fulfilled)
 
 > "These aren't dashboards someone built by hand. They're defined in code, checked 
 > into Git, and deployed with a single script. Every time we spin up this stack, 
@@ -316,16 +317,17 @@ Click into **Checkout Service — P99 Latency**:
 
 Navigate: **Observability > Alerts**
 
-Three alert rules fire during the incident scenario:
+Four alert rules fire during the incident scenario:
 
 | Rule | Condition | Type |
 |---|---|---|
 | Checkout — Latency Spike | p99 span duration > 1s over 5 min | ES\|QL query |
 | Checkout — Error Spike | > 5 error spans over 5 min | ES\|QL query |
 | Checkout Latency SLO — Fast Burn Rate | burning error budget 14.4× fast (critical) or 6× (high) | SLO burn rate |
+| Order Fulfilment Rate SLO — Fast Burn Rate | burning error budget 14.4× fast (critical) or 6× (high) | SLO burn rate |
 
-> "Three layers of alerting, all pointing at the same event. The ES|QL rules fire 
-> within a minute of the incident — immediate signal. The SLO burn rate rule fires 
+> "Four layers of alerting, all pointing at the same event. The ES|QL rules fire 
+> within a minute of the incident — immediate signal. The SLO burn rate rules fire 
 > when the budget depletion rate crosses a threshold — that's the on-call escalation. 
 > They're not separate systems: both use the same underlying trace data."
 
@@ -634,6 +636,11 @@ curl -s "${KIBANA_URL}/api/observability/slos?size=100" \
 # Redeploy alert rules
 ./scripts/demo.sh provision-alerts
 
+# Redeploy knowledge base, agent, and workflow (UC5)
+./scripts/demo.sh provision-knowledge-base
+./scripts/demo.sh provision-agent-builder
+./scripts/demo.sh provision-workflows
+
 # Reprovision Fleet agent policy + enrollment token
 ./scripts/demo.sh provision-fleet
 
@@ -668,5 +675,5 @@ Be transparent — technically sophisticated audiences will ask:
 | AWS Lambda | ❌ | Not wired in this build |
 | Fleet-managed Elastic Agent | ✅ Enrolled, system integration collecting host metrics | — |
 | Universal Profiling | — | Available in Elastic Cloud; requires Linux host with BTF kernel |
-| Alert rules (latency, errors, SLO burn rate) | ✅ 3 rules provisioned, fire during trigger-incident | — |
+| Alert rules (latency, errors, SLO burn rate) | ✅ 4 rules provisioned, fire during trigger-incident | — |
 | Slack alert routing | ✅ Slack API connector provisioned via Terraform (`TF_VAR_slack_token` + `TF_VAR_slack_channel_id`); wired to all 3 alert rules | — |

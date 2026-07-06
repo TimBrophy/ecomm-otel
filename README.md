@@ -79,6 +79,9 @@ This is the only command you need to run. It does everything in order:
 | 1 | Docker Compose | Starts all 9 services + load generator |
 | 1 | SLOs | Deploys 4 SLOs (checkout latency, error rate, API gateway availability, order fulfilment rate) |
 | 1 | Alert rules | Deploys 4 alert rules wired to Slack connector if present |
+| 1 | Knowledge base | Indexes SRE runbooks into `sre-runbooks` for semantic search |
+| 1 | Agent Builder | Deploys `ecomm-sre-rca` agent and `search_runbooks` tool |
+| 1 | Workflows | Deploys the autonomous RCA incident-response workflow |
 | 1 | Product team project | Creates the product-team Serverless project, links it via Cross-Project Search, deploys the Checkout Business Overview dashboard |
 | 2 | Fleet policy | Creates Fleet agent policy + system integration via Kibana API |
 | 2 | EC2 instance | Launches Amazon Linux 2023 with Elastic Agent 9.4.3 enrolled to Fleet |
@@ -248,6 +251,6 @@ source .env && aws ssm start-session \
 ./scripts/demo.sh test
 ```
 
-Covers: all 9 containers, collector health, data pipeline, UC1 tracing, PII masking, `realtime_fraud_detection` flag, Kafka spans, SLOs (UC2), GitOps structure (UC3), OTel native storage (UC4).
+Covers: all 9 containers, collector health, data pipeline, UC1 tracing, PII masking, `realtime_fraud_detection` flag, Kafka spans, SLOs + alerts (UC2), GitOps structure + CPS (UC3), OTel native storage (UC4), knowledge base + agent builder + workflow (UC5).
 
 Failing tests = open work items. Target is all-green before the demo.
