@@ -25,6 +25,7 @@ Granular commands:
   apply               Create Elastic Cloud project, provision ingest key, start Docker stack
   destroy             Stop Docker stack and destroy Elastic Cloud project
   apply-aws           Create Fleet policy + EC2 profiling host (requires apply first)
+  deploy-profiling-stress  Install + start checkout stress workload on EC2 profiling host
   destroy-aws         Destroy EC2 profiling host
   init                terraform init for infra/elastic
   plan                terraform plan for infra/elastic
@@ -1397,6 +1398,84 @@ print(json.dumps({'inputs': {
   echo "[$(date)] workflow run triggered: ${RUN_RESP}"
 }
 
+_ssm_run() {
+  # Run a shell command on the profiling EC2 host via SSM.
+  # Silently skips if the instance ID isn't available (EC2 not provisioned).
+  local CMD="$1"
+  local INSTANCE_ID
+  INSTANCE_ID=$(cd "${ROOT_DIR}/infra/aws" && terraform output -raw profiling_host_instance_id 2>/dev/null || echo "")
+  if [[ -z "${INSTANCE_ID}" || "${INSTANCE_ID}" == "pending" ]]; then
+    return 0
+  fi
+  aws ssm send-command \
+    --region "${AWS_REGION:-eu-central-1}" \
+    --instance-ids "${INSTANCE_ID}" \
+    --document-name "AWS-RunShellScript" \
+    --parameters "commands=[\"${CMD}\"]" \
+    --output text \
+    --query "Command.CommandId" > /dev/null 2>&1 || true
+}
+
+deploy_profiling_stress() {
+  echo "→ Deploying checkout stress workload to profiling host"
+  local INSTANCE_ID
+  INSTANCE_ID=$(cd "${ROOT_DIR}/infra/aws" && terraform output -raw profiling_host_instance_id 2>/dev/null || echo "")
+  if [[ -z "${INSTANCE_ID}" || "${INSTANCE_ID}" == "pending" ]]; then
+    echo "  ✗ EC2 profiling host not provisioned — run 'apply-aws' first"
+    return 1
+  fi
+
+  local JAVA_SRC
+  JAVA_SRC=$(cat "${ROOT_DIR}/infra/aws/profiling-stress/CheckoutStress.java")
+
+  # Escape the source for SSM JSON — replace \ with \\, " with \", newlines with \n
+  local JAVA_SRC_ESCAPED
+  JAVA_SRC_ESCAPED=$(echo "${JAVA_SRC}" | python3 -c "
+import sys
+src = sys.stdin.read()
+src = src.replace('\\\\', '\\\\\\\\').replace('\"', '\\\\\"').replace('\n', '\\\\n')
+print(src)
+")
+
+  # Single SSM command: install Java, write source, compile, start as daemon
+  local DEPLOY_CMD="set -e
+dnf install -y java-21-amazon-corretto-headless 2>/dev/null || true
+mkdir -p /opt/checkout-stress
+cat > /opt/checkout-stress/CheckoutStress.java << 'JAVASRC'
+${JAVA_SRC}
+JAVASRC
+cd /opt/checkout-stress
+javac CheckoutStress.java
+# Stop any existing instance
+pkill -f CheckoutStress 2>/dev/null || true
+sleep 1
+# Start as background daemon
+nohup java -cp . CheckoutStress > /var/log/checkout-stress.log 2>&1 &
+echo Checkout stress workload started"
+
+  echo "  Uploading and starting via SSM (this takes ~30s)..."
+  local CMD_ID
+  CMD_ID=$(aws ssm send-command \
+    --region "${AWS_REGION:-eu-central-1}" \
+    --instance-ids "${INSTANCE_ID}" \
+    --document-name "AWS-RunShellScript" \
+    --parameters "commands=[\"${DEPLOY_CMD}\"]" \
+    --output text \
+    --query "Command.CommandId" 2>/dev/null || echo "")
+
+  if [[ -z "${CMD_ID}" ]]; then
+    echo "  ✗ SSM send-command failed — check AWS credentials and instance connectivity"
+    return 1
+  fi
+
+  echo "  SSM command ID: ${CMD_ID}"
+  echo "  ✓ Stress workload deploying. Check status:"
+  echo "    aws ssm get-command-invocation --command-id ${CMD_ID} --instance-id ${INSTANCE_ID} --region ${AWS_REGION:-eu-central-1}"
+  echo "  Profiling data will appear in Kibana > Observability > Universal Profiling within ~2 min."
+  echo "  Normal mode: validateCart / fetchProductPrices / processPayment / createOrder are balanced."
+  echo "  Slow mode (mirrors trigger-incident): run './scripts/demo.sh trigger-incident'"
+}
+
 trigger_incident() {
   local FLAG_URL="${FLAG_SERVICE_URL:-http://localhost:8090}"
   echo "→ Triggering incident: realtime_fraud_detection=true"
@@ -1409,6 +1488,10 @@ trigger_incident() {
     -H "Content-Type: application/json" \
     -d '{"name":"realtime_fraud_detection","value":true}' | python3 -m json.tool
   echo ""
+
+  # Mirror slow mode on the profiling host so the flame graph tells the same story
+  _ssm_run "touch /tmp/fraud_check_slow && echo profiling slow mode enabled"
+  echo "  → Profiling host: slow mode enabled (fraudShieldApiCall will dominate flame graph)"
   echo "  Run './scripts/demo.sh reset' to restore normal behaviour."
 
   if [[ -n "${KIBANA_URL:-}" && -n "${ELASTIC_INGEST_API_KEY:-}" ]]; then
@@ -1421,6 +1504,10 @@ trigger_incident() {
 reset_demo() {
   local FLAG_URL="${FLAG_SERVICE_URL:-http://localhost:8090}"
   curl -sf -X POST "${FLAG_URL}/flags/reset" | python3 -m json.tool
+
+  # Clear profiling slow mode
+  _ssm_run "rm -f /tmp/fraud_check_slow && echo profiling slow mode cleared"
+
   echo "✓ Demo reset complete"
 }
 
@@ -1431,7 +1518,8 @@ case "${1:-}" in
   teardown)         teardown_all ;;
   apply)            tf_apply ;;
   destroy)          tf_destroy ;;
-  apply-aws)        tf_apply_aws ;;
+  apply-aws)                 tf_apply_aws ;;
+  deploy-profiling-stress)   deploy_profiling_stress ;;
   destroy-aws)      tf_destroy_aws ;;
   provision-fleet)     provision_fleet_policy ;;
   provision-connector) provision_slack_connector ;;

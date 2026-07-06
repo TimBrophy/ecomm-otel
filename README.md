@@ -139,6 +139,7 @@ Single confirmation, destroys everything in the right order: AWS first (while cr
 | `apply` | Elastic Cloud + Docker only (no AWS) |
 | `destroy` | Elastic Cloud + Docker only |
 | `apply-aws` | Fleet policy + EC2 profiling host (requires `apply` first) |
+| `deploy-profiling-stress` | Install + start synthetic checkout workload on EC2 host (generates profiling flame graphs) |
 | `destroy-aws` | Destroy EC2 profiling host only |
 | `test` | Smoke tests against local stack + Elastic Cloud |
 | `trigger-incident` | Enable `realtime_fraud_detection` flag (cascading failures) |
