@@ -38,4 +38,6 @@ output "product_team_kibana_endpoint" {
   value       = ec_observability_project.product_team.endpoints.kibana
 }
 
+# Profiling deployment outputs are written to .env by demo.sh provision-profiling-deployment,
+# not managed through Terraform (see profiling-deployment.tf comment for reasoning).
 

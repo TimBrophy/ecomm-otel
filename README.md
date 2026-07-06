@@ -155,6 +155,7 @@ Single confirmation, destroys everything in the right order: AWS first (while cr
 | `provision-product-team` | Create/update the product-team Serverless project, configure Cross-Project Search, deploy the Checkout Business Overview dashboard |
 | `provision-team` | Push team layer to `product-team` space: checkout funnel + Business Overview (9 Lens panels) |
 | `provision-fleet` | Re-create Fleet agent policy + system integration |
+| `provision-profiling-deployment` | Spin up stateful ESS deployment + re-enroll EC2 agent for Universal Profiling |
 | `provision-ml` | Print ML job reference configs (UI-only in Serverless) |
 | `plan` | `terraform plan` for `infra/elastic` |
 | `init` | `terraform init` for `infra/elastic` |

@@ -24,9 +24,11 @@ Master commands (full stack):
 Granular commands:
   apply               Create Elastic Cloud project, provision ingest key, start Docker stack
   destroy             Stop Docker stack and destroy Elastic Cloud project
-  apply-aws           Create Fleet policy + EC2 profiling host (requires apply first)
+  apply-aws           Create Fleet policy + EC2 profiling host enrolled to Serverless Fleet
+  apply-profiling-host  Destroy + rebuild EC2 host enrolled to stateful ESS Fleet (Universal Profiling)
   deploy-profiling-stress  Install + start checkout stress workload on EC2 profiling host
   destroy-aws         Destroy EC2 profiling host
+  provision-profiling-deployment  Spin up stateful ESS deployment for Universal Profiling (run once)
   init                terraform init for infra/elastic
   plan                terraform plan for infra/elastic
   provision-fleet      (Re-)create Fleet agent policy + system integration only
@@ -1236,6 +1238,72 @@ tf_apply_aws() {
   echo "  Fleet > Agent Policies > ${POLICY_NAME:-ecomm-otel — Universal Profiling Host} > Add integration"
 }
 
+tf_apply_profiling_host() {
+  echo "→ Apply: infra/aws — EC2 profiling host enrolled to stateful ESS Fleet"
+
+  # Reload .env so we have the profiling vars that were written by provision-profiling-deployment
+  set -a; source "${ROOT_DIR}/.env"; set +a
+
+  for KEY in PROFILING_FLEET_URL PROFILING_FLEET_ENROLLMENT_TOKEN; do
+    local VAL
+    VAL=$(grep "^${KEY}=" "${ROOT_DIR}/.env" 2>/dev/null | head -1 | cut -d= -f2-)
+    if [[ -z "${VAL}" ]]; then
+      echo "  ✗ ${KEY} not set in .env — run './scripts/demo.sh provision-profiling-deployment' first" >&2
+      return 1
+    fi
+  done
+
+  for TAG_KEY in TEAM PROJECT; do
+    local TAG_VAL
+    TAG_VAL=$(grep "^${TAG_KEY}=" "${ROOT_DIR}/.env" 2>/dev/null | head -1 | cut -d= -f2- | tr -d '"')
+    if [[ -z "${TAG_VAL}" ]]; then
+      echo "  ✗ ${TAG_KEY} not set in .env" >&2; return 1
+    fi
+  done
+
+  (cd "${ROOT_DIR}/infra/aws" && terraform init -reconfigure)
+
+  # Destroy existing host first (clean slate for the new enrollment)
+  echo "  → Destroying existing EC2 host (if any)..."
+  (cd "${ROOT_DIR}/infra/aws" && terraform destroy -auto-approve \
+    -var="fleet_url=${PROFILING_FLEET_URL}" \
+    -var="fleet_enrollment_token=${PROFILING_FLEET_ENROLLMENT_TOKEN}" \
+    -var="team=${TEAM}" \
+    -var="project=${PROJECT}" \
+    ${KEEP_UNTIL:+-var="keep_until=${KEEP_UNTIL}"} \
+    ${ELASTIC_AGENT_VERSION:+-var="agent_version=${ELASTIC_AGENT_VERSION}"} \
+    ${KEY_PAIR_NAME:+-var="key_pair_name=${KEY_PAIR_NAME}"} 2>/dev/null || true)
+
+  echo "  → Creating new EC2 host enrolled to stateful ESS Fleet..."
+  (cd "${ROOT_DIR}/infra/aws" && terraform apply -auto-approve \
+    -var="fleet_url=${PROFILING_FLEET_URL}" \
+    -var="fleet_enrollment_token=${PROFILING_FLEET_ENROLLMENT_TOKEN}" \
+    -var="team=${TEAM}" \
+    -var="project=${PROJECT}" \
+    ${KEEP_UNTIL:+-var="keep_until=${KEEP_UNTIL}"} \
+    ${ELASTIC_AGENT_VERSION:+-var="agent_version=${ELASTIC_AGENT_VERSION}"} \
+    ${KEY_PAIR_NAME:+-var="key_pair_name=${KEY_PAIR_NAME}"})
+
+  local INSTANCE_ID SSM_CMD
+  INSTANCE_ID=$(cd "${ROOT_DIR}/infra/aws" && terraform output -raw profiling_host_instance_id 2>/dev/null || echo "pending")
+  SSM_CMD=$(cd "${ROOT_DIR}/infra/aws" && terraform output -raw ssm_connect_command 2>/dev/null || echo "")
+
+  echo ""
+  echo "✓ Profiling host ready — enrolled to stateful ESS Fleet"
+  echo "  Instance ID : ${INSTANCE_ID}"
+  echo "  Fleet URL   : ${PROFILING_FLEET_URL}"
+  echo "  Kibana      : ${PROFILING_KIBANA_URL:-see .env PROFILING_KIBANA_URL}"
+  echo ""
+  echo "  Debug access (wait ~2 min for SSM to register):"
+  echo "  ${SSM_CMD}"
+  echo "  Then: sudo cat /var/log/elastic-agent-install.log"
+  echo ""
+  echo "  Next: add Universal Profiling integration in Kibana:"
+  echo "    Fleet > Agent Policies > ecomm-otel — Universal Profiling Host"
+  echo "    > Add integration > search 'Universal Profiling'"
+  echo "  Then run: ./scripts/demo.sh deploy-profiling-stress"
+}
+
 _destroy_aws() {
   # shellcheck disable=SC2046
   (cd "${ROOT_DIR}/infra/aws" && terraform destroy -auto-approve \
@@ -1472,6 +1540,408 @@ print(json.dumps({'commands': cmds}))
   echo "  Slow mode   : run './scripts/demo.sh trigger-incident' — fraudShieldApiCall dominates"
 }
 
+provision_profiling_deployment() {
+  # Creates a stateful ESS deployment for Universal Profiling via EC REST API.
+  # Terraform ec_deployment is not used — all deployment templates in
+  # aws-eu-central-1 reference deprecated ICs that the EC API rejects at plan time.
+  echo "→ Provisioning stateful ESS deployment for Universal Profiling"
+
+  local STACK_VER="${PROFILING_STACK_VERSION:-8.17.3}"
+  local DEPLOY_NAME="${PROFILING_DEPLOYMENT_NAME:-ecomm-otel-demo-profiling}"
+  local REGION="aws-eu-central-1"
+  local EC_API="https://api.elastic-cloud.com/api/v1"
+
+  # Idempotent: check if deployment already exists
+  local EXISTING_DID
+  EXISTING_DID=$(curl -sf "${EC_API}/deployments?q=name:${DEPLOY_NAME}&size=5" \
+    -H "Authorization: ApiKey ${EC_API_KEY}" 2>/dev/null | python3 -c "
+import json, sys
+data = json.load(sys.stdin)
+items = data.get('deployments', [])
+match = next((d for d in items if d.get('name') == '${DEPLOY_NAME}'), None)
+print(match['id'] if match else '')
+" 2>/dev/null || echo "")
+
+  local PROFILING_DID
+  if [[ -n "${EXISTING_DID}" ]]; then
+    echo "  – deployment already exists (${EXISTING_DID})"
+    PROFILING_DID="${EXISTING_DID}"
+  else
+    echo "  Creating stateful deployment (stack ${STACK_VER}, ARM c6gd, hot-only)..."
+
+    # Build deployment spec with only hot_content topology — avoids all deprecated ICs
+    local DEPLOY_BODY
+    DEPLOY_BODY=$(python3 -c "
+import json
+spec = {
+  'name': '${DEPLOY_NAME}',
+  'resources': {
+    'elasticsearch': [{
+      'ref_id': 'main-elasticsearch',
+      'region': '${REGION}',
+      'plan': {
+        'deployment_template': {'id': 'aws-cpu-optimized-arm'},
+        'elasticsearch': {},
+        'cluster_topology': [{
+          'id': 'hot_content',
+          'node_roles': ['master','ingest','transform','data_hot','remote_cluster_client','data_content'],
+          'zone_count': 1,
+          'instance_configuration_id': 'aws.es.datahot.c8gd',
+          'size': {'value': 4096, 'resource': 'memory'},
+          'elasticsearch': {'node_attributes': {'data': 'hot'}}
+        }]
+      }
+    }],
+    'kibana': [{
+      'ref_id': 'main-kibana',
+      'elasticsearch_cluster_ref_id': 'main-elasticsearch',
+      'region': '${REGION}',
+      'plan': {
+        'kibana': {},
+        'cluster_topology': [{
+          'instance_configuration_id': 'aws.kibana.c8gd',
+          'size': {'value': 1024, 'resource': 'memory'},
+          'zone_count': 1
+        }]
+      }
+    }],
+    'integrations_server': [{
+      'ref_id': 'main-integrations_server',
+      'elasticsearch_cluster_ref_id': 'main-elasticsearch',
+      'region': '${REGION}',
+      'plan': {
+        'integrations_server': {},
+        'cluster_topology': [{
+          'instance_configuration_id': 'aws.integrationsserver.c8gd',
+          'size': {'value': 1024, 'resource': 'memory'},
+          'zone_count': 1
+        }]
+      }
+    }]
+  }
+}
+print(json.dumps(spec))
+")
+
+    local HTTP_CODE
+    HTTP_CODE=$(curl -s -o /tmp/profiling_deploy_resp.json -w "%{http_code}" \
+      -X POST "${EC_API}/deployments?version=${STACK_VER}" \
+      -H "Authorization: ApiKey ${EC_API_KEY}" \
+      -H "Content-Type: application/json" \
+      -d "${DEPLOY_BODY}")
+
+    if [[ "${HTTP_CODE}" =~ ^2 ]]; then
+      PROFILING_DID=$(python3 -c "import json; print(json.load(open('/tmp/profiling_deploy_resp.json'))['id'])" 2>/dev/null)
+      echo "  ✓ Deployment created (${PROFILING_DID})"
+    else
+      echo "  ✗ Failed to create deployment (HTTP ${HTTP_CODE}):" >&2
+      cat /tmp/profiling_deploy_resp.json >&2
+      rm -f /tmp/profiling_deploy_resp.json
+      return 1
+    fi
+    rm -f /tmp/profiling_deploy_resp.json
+  fi
+
+  update_env "PROFILING_DEPLOYMENT_ID" "${PROFILING_DID}"
+
+  # Wait for healthy + fetch URLs and credentials
+  echo "  Waiting for deployment to become healthy (up to 10 min)..."
+  local ATTEMPTS=0 STATUS="" KIBANA_URL="" ES_URL="" ES_PASS="" ES_USER=""
+  while [[ ${ATTEMPTS} -lt 60 ]]; do
+    local INFO
+    INFO=$(curl -sf "${EC_API}/deployments/${PROFILING_DID}" \
+      -H "Authorization: ApiKey ${EC_API_KEY}" 2>/dev/null || echo "")
+    if [[ -z "${INFO}" ]]; then
+      sleep 10; ATTEMPTS=$((ATTEMPTS+1)); continue
+    fi
+
+    STATUS=$(echo "${INFO}" | python3 -c "
+import json, sys
+d = json.load(sys.stdin)
+# Check if all resources are started
+recs = d.get('resources', {})
+statuses = []
+for kind in ('elasticsearch', 'kibana', 'integrations_server'):
+    for r in recs.get(kind, []):
+        for info in r.get('info', {}).get('plan_info', {}).get('current', {}).get('plan_attempt_log', []):
+            pass  # not useful here
+        health = r.get('info', {}).get('status', '')
+        statuses.append(health)
+print('healthy' if all(s == 'started' for s in statuses if s) and statuses else 'pending')
+" 2>/dev/null || echo "pending")
+
+    if [[ "${STATUS}" == "healthy" ]]; then
+      # Extract endpoint URLs
+      ES_URL=$(echo "${INFO}" | python3 -c "
+import json, sys
+d = json.load(sys.stdin)
+for r in d.get('resources', {}).get('elasticsearch', []):
+    ep = r.get('info', {}).get('metadata', {}).get('endpoint', '')
+    if ep: print('https://' + ep); break
+" 2>/dev/null || echo "")
+      KIBANA_URL=$(echo "${INFO}" | python3 -c "
+import json, sys
+d = json.load(sys.stdin)
+for r in d.get('resources', {}).get('kibana', []):
+    ep = r.get('info', {}).get('metadata', {}).get('endpoint', '')
+    if ep: print('https://' + ep); break
+" 2>/dev/null || echo "")
+      break
+    fi
+
+    echo -n "."
+    sleep 10; ATTEMPTS=$((ATTEMPTS+1))
+  done
+
+  if [[ "${STATUS}" != "healthy" || -z "${KIBANA_URL}" ]]; then
+    # Deployment still in progress — fetch what we can
+    local LATEST_INFO
+    LATEST_INFO=$(curl -sf "${EC_API}/deployments/${PROFILING_DID}" \
+      -H "Authorization: ApiKey ${EC_API_KEY}" 2>/dev/null || echo "")
+    ES_URL=$(echo "${LATEST_INFO}" | python3 -c "
+import json, sys
+d = json.load(sys.stdin)
+for r in d.get('resources', {}).get('elasticsearch', []):
+    ep = r.get('info', {}).get('metadata', {}).get('endpoint', '')
+    if ep: print('https://' + ep); break
+" 2>/dev/null || echo "")
+    KIBANA_URL=$(echo "${LATEST_INFO}" | python3 -c "
+import json, sys
+d = json.load(sys.stdin)
+for r in d.get('resources', {}).get('kibana', []):
+    ep = r.get('info', {}).get('metadata', {}).get('endpoint', '')
+    if ep: print('https://' + ep); break
+" 2>/dev/null || echo "")
+    if [[ -z "${KIBANA_URL}" ]]; then
+      echo ""
+      echo "  ✗ Timed out waiting for deployment — check Elastic Cloud console" >&2
+      echo "    Deployment ID: ${PROFILING_DID}"
+      return 1
+    fi
+    echo ""
+    echo "  ⚠ Deployment still initialising — URLs available, continuing..."
+  else
+    echo ""
+    echo "  ✓ Deployment healthy"
+  fi
+
+  # Reset credentials and capture password
+  echo "  Resetting credentials for deployment ${PROFILING_DID}..."
+  local RESET_RESP
+  RESET_RESP=$(curl -sf -X POST \
+    "${EC_API}/deployments/${PROFILING_DID}/elasticsearch/main-elasticsearch/_reset-password" \
+    -H "Authorization: ApiKey ${EC_API_KEY}" 2>/dev/null || echo "")
+  ES_USER=$(echo "${RESET_RESP}" | python3 -c "import json,sys; d=json.load(sys.stdin); print(d.get('username','elastic'))" 2>/dev/null || echo "elastic")
+  ES_PASS=$(echo "${RESET_RESP}" | python3 -c "import json,sys; d=json.load(sys.stdin); print(d.get('password',''))" 2>/dev/null || echo "")
+
+  if [[ -z "${ES_PASS}" ]]; then
+    echo "  ✗ Could not reset credentials" >&2
+    return 1
+  fi
+
+  update_env "PROFILING_KIBANA_URL" "${KIBANA_URL}"
+  update_env "PROFILING_ES_URL" "${ES_URL}"
+  update_env "PROFILING_ES_USER" "${ES_USER}"
+  update_env "PROFILING_ES_PASSWORD" "${ES_PASS}"
+
+  echo "  ✓ Stateful ESS deployment ready"
+  echo "    Kibana  : ${KIBANA_URL}"
+  echo "    ES      : ${ES_URL}"
+  echo "    Deploy  : ${PROFILING_DID}"
+
+  _provision_profiling_fleet "${STACK_VER}"
+}
+
+_provision_profiling_fleet() {
+  local KIBANA="${PROFILING_KIBANA_URL}"
+  local ES_USER="${PROFILING_ES_USER:-elastic}"
+  local ES_PASS="${PROFILING_ES_PASSWORD}"
+  local STACK_VER="$1"
+  local POLICY_NAME="ecomm-otel — Universal Profiling Host"
+
+  echo "→ Configuring Fleet in stateful deployment"
+
+  # Wait for Kibana (up to 5 min)
+  local ATTEMPTS=0
+  echo -n "  Waiting for Kibana"
+  while [[ ${ATTEMPTS} -lt 30 ]]; do
+    if curl -sf "${KIBANA}/api/status" -u "${ES_USER}:${ES_PASS}" -o /dev/null 2>/dev/null; then
+      echo " ✓"
+      break
+    fi
+    echo -n "."
+    sleep 10
+    ATTEMPTS=$((ATTEMPTS+1))
+  done
+  if [[ ${ATTEMPTS} -ge 30 ]]; then
+    echo ""
+    echo "  ✗ Kibana did not become ready in 5 min" >&2
+    return 1
+  fi
+
+  # Get Fleet server URL — retry because Fleet initialises after Kibana reports healthy
+  local FLEET_SERVER_URL="" FLEET_ATTEMPTS=0
+  echo -n "  Waiting for Fleet"
+  while [[ ${FLEET_ATTEMPTS} -lt 12 && -z "${FLEET_SERVER_URL}" ]]; do
+    FLEET_SERVER_URL=$(curl -sf "${KIBANA}/api/fleet/fleet_server_hosts" \
+      -u "${ES_USER}:${ES_PASS}" 2>/dev/null | python3 -c "
+import json, sys
+items = json.load(sys.stdin).get('items', [])
+default = next((i for i in items if i.get('is_default') and not i.get('is_preconfigured')), None)
+if not default:
+    default = next((i for i in items if i.get('is_default')), None)
+print(default['host_urls'][0] if default and default.get('host_urls') else '')
+" 2>/dev/null || echo "")
+    if [[ -z "${FLEET_SERVER_URL}" ]]; then
+      echo -n "."
+      sleep 15
+      FLEET_ATTEMPTS=$((FLEET_ATTEMPTS+1))
+    fi
+  done
+
+  if [[ -z "${FLEET_SERVER_URL}" ]]; then
+    echo ""
+    echo "  ✗ Could not retrieve Fleet server URL from stateful deployment" >&2
+    return 1
+  fi
+  echo " ✓"
+  update_env "PROFILING_FLEET_URL" "${FLEET_SERVER_URL}"
+  echo "  ✓ Fleet URL: ${FLEET_SERVER_URL}"
+
+  # Create (or find) agent policy
+  local POLICY_ID
+  POLICY_ID=$(curl -sf "${KIBANA}/api/fleet/agent_policies?perPage=100" \
+    -u "${ES_USER}:${ES_PASS}" 2>/dev/null | python3 -c "
+import json, sys
+items = json.load(sys.stdin).get('items', [])
+match = next((i for i in items if i.get('name') == '${POLICY_NAME}'), None)
+print(match['id'] if match else '')
+" 2>/dev/null || echo "")
+
+  if [[ -n "${POLICY_ID}" ]]; then
+    echo "  – agent policy already exists (${POLICY_ID})"
+  else
+    local HTTP_CODE
+    HTTP_CODE=$(curl -s -o /tmp/pp_policy.json -w "%{http_code}" \
+      -X POST "${KIBANA}/api/fleet/agent_policies" \
+      -u "${ES_USER}:${ES_PASS}" -H "kbn-xsrf: true" -H "Content-Type: application/json" \
+      -d "{\"name\":\"${POLICY_NAME}\",\"namespace\":\"default\",\"description\":\"EC2 profiling host — Universal Profiling\"}")
+    if [[ "${HTTP_CODE}" =~ ^2 ]]; then
+      POLICY_ID=$(python3 -c "import json; print(json.load(open('/tmp/pp_policy.json'))['item']['id'])" 2>/dev/null)
+      echo "  ✓ agent policy created (${POLICY_ID})"
+    else
+      echo "  ✗ failed to create agent policy (HTTP ${HTTP_CODE}): $(cat /tmp/pp_policy.json 2>/dev/null)" >&2
+      rm -f /tmp/pp_policy.json; return 1
+    fi
+  fi
+  rm -f /tmp/pp_policy.json
+
+  # Attach system integration (idempotent)
+  local SYS_VERSION="${SYSTEM_INTEGRATION_VERSION:-1.62.0}"
+  local SYS_EXISTING
+  SYS_EXISTING=$(curl -sf "${KIBANA}/api/fleet/package_policies?kuery=name:\"profiling-system-host\"" \
+    -u "${ES_USER}:${ES_PASS}" 2>/dev/null | python3 -c "
+import json, sys
+items = [i for i in json.load(sys.stdin).get('items', []) if i.get('policy_id') == '${POLICY_ID}']
+print(items[0]['id'] if items else '')
+" 2>/dev/null || echo "")
+
+  if [[ -n "${SYS_EXISTING}" ]]; then
+    echo "  – system integration already attached"
+  else
+    local HTTP_CODE
+    HTTP_CODE=$(curl -s -o /tmp/pp_sys.json -w "%{http_code}" \
+      -X POST "${KIBANA}/api/fleet/package_policies" \
+      -u "${ES_USER}:${ES_PASS}" -H "kbn-xsrf: true" -H "Content-Type: application/json" \
+      -d "{\"name\":\"profiling-system-host\",\"namespace\":\"default\",\"policy_id\":\"${POLICY_ID}\",\"package\":{\"name\":\"system\",\"version\":\"${SYS_VERSION}\"},\"inputs\":{}}")
+    if [[ "${HTTP_CODE}" =~ ^2 ]] || [[ "${HTTP_CODE}" == "409" ]]; then
+      echo "  ✓ system integration attached"
+    else
+      echo "  ✗ system integration failed (HTTP ${HTTP_CODE}) — continuing anyway" >&2
+    fi
+    rm -f /tmp/pp_sys.json
+  fi
+
+  # Get enrollment token
+  local TOKEN
+  TOKEN=$(curl -sf "${KIBANA}/api/fleet/enrollment_api_keys?kuery=policy_id:\"${POLICY_ID}\"" \
+    -u "${ES_USER}:${ES_PASS}" 2>/dev/null | python3 -c "
+import json, sys
+items = json.load(sys.stdin).get('items', [])
+print(items[0]['api_key'] if items else '')
+" 2>/dev/null || echo "")
+
+  if [[ -z "${TOKEN}" ]]; then
+    echo "  ✗ Could not retrieve Fleet enrollment token" >&2
+    return 1
+  fi
+  update_env "PROFILING_FLEET_ENROLLMENT_TOKEN" "${TOKEN}"
+  echo "  ✓ enrollment token saved to .env"
+
+  _ssm_reenroll_profiling "${FLEET_SERVER_URL}" "${TOKEN}" "${STACK_VER}"
+}
+
+_ssm_reenroll_profiling() {
+  local FLEET_URL="$1"
+  local TOKEN="$2"
+  local STACK_VER="$3"
+
+  echo "→ Re-enrolling EC2 agent to stateful deployment"
+  local INSTANCE_ID REGION
+  REGION="${AWS_REGION:-eu-central-1}"
+  INSTANCE_ID=$(cd "${ROOT_DIR}/infra/aws" && terraform output -raw profiling_host_instance_id 2>/dev/null || echo "")
+  if [[ -z "${INSTANCE_ID}" || "${INSTANCE_ID}" == "pending" ]]; then
+    echo "  ✗ EC2 profiling host not provisioned — run 'apply-aws' first, then re-run provision-profiling-deployment" >&2
+    echo "  Enrollment token saved to .env as PROFILING_FLEET_ENROLLMENT_TOKEN — run 'provision-profiling-deployment' again after 'apply-aws'"
+    return 0
+  fi
+
+  # Re-enroll the existing agent (don't reinstall — Elastic Cloud auto-picks the latest
+  # compatible version which matches the agent already on the host)
+  local PARAMS
+  PARAMS=$(python3 -c "
+import json
+cmds = [
+    'set -e',
+    'systemctl stop elastic-agent 2>/dev/null || true',
+    'sleep 2',
+    'elastic-agent enroll --url=\"${FLEET_URL}\" --enrollment-token=\"${TOKEN}\" --force',
+    'systemctl enable elastic-agent && systemctl start elastic-agent',
+    'sleep 3',
+    'systemctl is-active elastic-agent && echo \"Re-enrollment complete\" || echo \"Service not yet active — check systemctl status elastic-agent\"',
+]
+print(json.dumps({'commands': cmds}))
+" 2>/dev/null)
+
+  local CMD_ID
+  CMD_ID=$(aws ssm send-command \
+    --region "${REGION}" \
+    --instance-ids "${INSTANCE_ID}" \
+    --document-name "AWS-RunShellScript" \
+    --cli-input-json "{\"DocumentName\":\"AWS-RunShellScript\",\"InstanceIds\":[\"${INSTANCE_ID}\"],\"Parameters\":${PARAMS},\"TimeoutSeconds\":300}" \
+    --output text \
+    --query "Command.CommandId" 2>&1 || echo "")
+
+  if [[ -z "${CMD_ID}" ]] || echo "${CMD_ID}" | grep -q "Error\|error"; then
+    echo "  ✗ SSM re-enrollment failed:"
+    echo "    ${CMD_ID}" >&2
+    return 1
+  fi
+
+  echo "  SSM command ID: ${CMD_ID}"
+  echo "  ✓ Re-enrollment running. Poll with:"
+  echo "    aws ssm get-command-invocation --command-id ${CMD_ID} --instance-id ${INSTANCE_ID} --region ${REGION}"
+  echo ""
+  echo "  Next steps:"
+  echo "  1. Wait ~2 min for the agent to check in to the stateful Fleet"
+  echo "  2. In Kibana (${PROFILING_KIBANA_URL:-see .env PROFILING_KIBANA_URL}):"
+  echo "     Fleet > Integrations > search 'Universal Profiling'"
+  echo "     Add the 'Universal Profiling' integration to the '${POLICY_NAME:-ecomm-otel — Universal Profiling Host}' policy"
+  echo "  3. Flame graphs appear in: Observability > Universal Profiling"
+  echo "  4. Trigger slow mode: ./scripts/demo.sh trigger-incident"
+  echo "     (FraudShield fraudShieldApiCall() will dominate the flame graph)"
+}
+
 trigger_incident() {
   local FLAG_URL="${FLAG_SERVICE_URL:-http://localhost:8090}"
   echo "→ Triggering incident: realtime_fraud_detection=true"
@@ -1515,6 +1985,7 @@ case "${1:-}" in
   apply)            tf_apply ;;
   destroy)          tf_destroy ;;
   apply-aws)                 tf_apply_aws ;;
+  apply-profiling-host)      tf_apply_profiling_host ;;
   deploy-profiling-stress)   deploy_profiling_stress ;;
   destroy-aws)      tf_destroy_aws ;;
   provision-fleet)     provision_fleet_policy ;;
@@ -1533,6 +2004,7 @@ case "${1:-}" in
   provision-rbac)            provision_rbac ;;
   provision-product-team)    provision_product_team ;;
   provision-team)            provision_team "checkout" "product-team" ;;
+  provision-profiling-deployment) provision_profiling_deployment ;;
   refresh-key)
     PROJECT_ID="${ELASTIC_PROJECT_ID:-}"
     if [[ -z "${PROJECT_ID}" ]]; then
