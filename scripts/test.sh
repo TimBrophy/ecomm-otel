@@ -288,7 +288,7 @@ else
   RULES_RESP=$(curl -sf \
     -H "Authorization: ApiKey ${ELASTIC_INGEST_API_KEY}" \
     -H "kbn-xsrf: true" \
-    "${KIBANA_URL}/api/alerting/rules/_find?page_size=50" 2>/dev/null || echo '{"total":0,"data":[]}')
+    "${KIBANA_URL}/api/alerting/rules/_find?per_page=50" 2>/dev/null || echo '{"total":0,"data":[]}')
 
   RULE_COUNT=$(echo "${RULES_RESP}" | python3 -c "
 import sys,json; d=json.load(sys.stdin); print(d.get('total',0))" 2>/dev/null || echo "0")
