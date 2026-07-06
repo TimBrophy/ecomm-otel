@@ -315,6 +315,8 @@ print(json.dumps({'linked': {'projects': {'${ELASTIC_PROJECT_ID}': {'type': 'obs
   rm -f /tmp/cps_resp.json
 
   # ── 4. Deploy Checkout Business Overview dashboard via Terraform ──
+  # After apply, immediately remove the resource from state so regular
+  # tf_apply runs don't attempt to reconcile it without PT credentials.
   echo "→ Deploying product team dashboard via Terraform"
   (
     cd "${ROOT_DIR}/infra/elastic"
@@ -326,6 +328,7 @@ print(json.dumps({'linked': {'projects': {'${ELASTIC_PROJECT_ID}': {'type': 'obs
     TF_VAR_kibana_endpoint="${KIBANA_URL}" \
     terraform apply -auto-approve \
       -target=elasticstack_kibana_dashboard.product_team_overview[0]
+    terraform state rm elasticstack_kibana_dashboard.product_team_overview[0] 2>/dev/null || true
   )
   echo "  ✓ Checkout Business Overview deployed to product team Kibana"
   echo "    ${PT_KIBANA_URL}/app/dashboards"
