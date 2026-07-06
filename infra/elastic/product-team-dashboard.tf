@@ -8,12 +8,12 @@
 provider "elasticstack" {
   alias = "product_team"
   elasticsearch {
-    endpoints = [var.product_team_es_endpoint]
-    api_key   = var.product_team_api_key
+    endpoints = [var.product_team_es_endpoint != "" ? var.product_team_es_endpoint : var.elastic_endpoint]
+    api_key   = var.product_team_api_key != "" ? var.product_team_api_key : var.ec_api_key
   }
   kibana {
-    endpoints = [var.product_team_kibana_endpoint]
-    api_key   = var.product_team_api_key
+    endpoints = [var.product_team_kibana_endpoint != "" ? var.product_team_kibana_endpoint : var.kibana_endpoint]
+    api_key   = var.product_team_api_key != "" ? var.product_team_api_key : var.ec_api_key
   }
 }
 
