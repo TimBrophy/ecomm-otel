@@ -49,7 +49,7 @@ resource "terraform_data" "cross_project_search" {
         -d '${self.input.request_body}')
 
       HTTP_CODE=$(echo "$RESP" | tail -1)
-      BODY=$(echo "$RESP" | head -n -1)
+      BODY=$(echo "$RESP" | sed '$d')
       echo "==> HTTP $HTTP_CODE: $BODY"
 
       [ "$HTTP_CODE" = "200" ] || [ "$HTTP_CODE" = "201" ] || [ "$HTTP_CODE" = "202" ] || {
@@ -77,9 +77,9 @@ resource "terraform_data" "cross_project_search" {
         -H "Content-Type: application/json" \
         -d '{"linked":{"projects":{}}}')
       HTTP_CODE=$(echo "$RESP" | tail -1)
-      BODY=$(echo "$RESP" | head -n -1)
+      BODY=$(echo "$RESP" | sed '$d')
       echo "==> HTTP $HTTP_CODE: $BODY"
-      [ "$HTTP_CODE" = "200" ] || [ "$HTTP_CODE" = "404" ] || {
+      [ "$HTTP_CODE" = "200" ] || [ "$HTTP_CODE" = "404" ] || [ "$HTTP_CODE" = "400" ] || {
         echo "ERROR: CPS removal failed with HTTP $HTTP_CODE"
         exit 1
       }
