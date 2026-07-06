@@ -714,7 +714,10 @@ tf_apply() {
   (cd "${ROOT_DIR}/infra/elastic" && terraform apply -auto-approve \
     -var="ec_api_key=${EC_API_KEY}" \
     -var="elastic_endpoint=${ELASTIC_ENDPOINT}" \
-    -var="kibana_endpoint=${KIBANA_ENDPOINT}")
+    -var="kibana_endpoint=${KIBANA_ENDPOINT}" \
+    -var="product_team_kibana_endpoint=" \
+    -var="product_team_es_endpoint=" \
+    -var="product_team_api_key=")
 
   # ── Provision ingest API key ──
   provision_ingest_key "${PROJECT_ID}"
