@@ -1,0 +1,160 @@
+name: ecomm-otel--autonomous-sre-rca
+description: >
+  Autonomous SRE: when the checkout-latency-spike alert fires, an Agent Builder
+  agent investigates the checkout-service incident, grounds remediation in the
+  SRE runbook knowledge base (ELSER semantic search), and opens a Kibana Case
+  with the RCA, cited playbook-based remediation, and the reasoning trace.
+enabled: true
+tags: ["rca", "ai", "observability", "checkout", "demo"]
+
+# NOTE: type: alert declares the intended trigger for documentation/forward
+# compatibility (see https://www.elastic.co/docs/explore-analyze/workflows/triggers/alert-triggers).
+# On this build, the alerting rule's "Run Workflow" system action
+# (connector id .workflows) is registered as an action TYPE but has no backing
+# connector saved object, so native rule->workflow wiring 404s
+# ("Saved object [action/.workflows] not found"). Until that's available,
+# scripts/demo.sh's trigger_incident() calls POST /api/workflows/workflow/{id}/run
+# directly, with an `inputs` payload shaped like the native alert event would
+# be (alerts[0]._id/_index, rule.id/name, plus our own incident_started_at) —
+# built from the real alert document the checkout-latency-spike rule writes to
+# .alerts-*, once it actually fires. Below, steps reference this as
+# `inputs.*`, NOT `event.*` — confirmed empirically that `event` only
+# populates for genuine native alert-triggered runs; manual/programmatic
+# /run invocations (triggeredBy: "manual", which is what this always is here)
+# expose the payload as `inputs.*`. Using `event.*` compiles and runs without
+# error but silently renders empty — this bit us once already (an early,
+# unnoticed empty-alert-id bug on cases.addAlerts, and later an agent that
+# asked for clarification instead of using an empty timestamp). If native
+# rule->workflow wiring is ever fixed, this step set would need `event.*`
+# added back for that path (or both bound, depending on how Elastic ships it).
+triggers:
+  - type: alert
+
+steps:
+  # 1) Root-cause investigation. The agent has ES|QL, log-search, and
+  #    observability-specific tools; it must reach its own conclusions rather
+  #    than parrot the alert payload.
+  - name: rca_analysis
+    type: ai.agent
+    agent-id: ecomm-sre-rca
+    create-conversation: true
+    with:
+      message: |
+        A latency alert has fired for checkout-service in our e-commerce stack.
+        Investigate and determine the root cause. Be concise and preserve context.
+
+        Required investigation (use your tools — do NOT guess):
+        1. Rank p99 server-span latency by service over the last 15 minutes.
+           Confirm checkout-service is the top offender.
+        2. Inspect the fraud_check child span: p50/p99 duration, the timeout
+           rate, and the provider/peer it calls.
+        3. Correlate with the feature flag: compare checkout latency where
+           feature_flag.realtime_fraud_detection is true vs false.
+        4. Establish blast radius: order-service backpressure and any Kafka
+           producer/consumer latency downstream.
+        5. Check whether the fraud-check connection-pool metrics
+           (fraud_check.pool.queued_requests / active_connections) exist and
+           correlate with the latency spike. If they return no data, say so
+           explicitly — do not invent a pool-saturation figure.
+
+        Output a tight root-cause statement: what changed, the mechanism, the
+        quantified impact, and the blast radius. Cite the concrete numbers you
+        found.
+
+        <alert>
+        {{ inputs | json }}
+        </alert>
+
+  # 2) Remediation, grounded in the runbook knowledge base. Same conversation,
+  #    so the agent still has the RCA in context. It must call search_runbooks.
+  - name: remediation
+    type: ai.agent
+    agent-id: ecomm-sre-rca
+    with:
+      conversation_id: "{{ steps.rca_analysis.output.conversation_id }}"
+      message: |
+        Now produce remediation recommendations. This is RECOMMEND-ONLY: a
+        human applies the change. Do the following in order:
+
+        1. Call search_runbooks with a query describing the symptom you found.
+           Retrieve the single best-matching playbook.
+        2. Base your recommendations on that playbook. Quote the playbook
+           title and the specific step numbers you are following. Do not
+           invent remediation that is not supported by the RCA or the
+           playbook.
+        3. Produce an ordered, specific action list: the immediate mitigation
+           first, then the durable fix, then follow-ups. Where the playbook
+           and the observed data disagree, or data is missing, say so plainly
+           rather than asserting an unverified cause.
+
+        Format as Markdown with "Immediate mitigation", "Durable fix", and
+        "Cited playbook" sections. Keep it under ~250 words.
+
+  - name: case_title
+    type: ai.agent
+    agent-id: ecomm-sre-rca
+    with:
+      conversation_id: "{{ steps.rca_analysis.output.conversation_id }}"
+      message: "Produce a clear, specific case title for this incident. STRICT LIMIT: 120 characters maximum (Kibana Cases rejects titles over 160 — stay well under that). Output only the title, no quotes."
+
+  - name: case_description
+    type: ai.agent
+    agent-id: ecomm-sre-rca
+    with:
+      conversation_id: "{{ steps.rca_analysis.output.conversation_id }}"
+      message: "Produce a 2-3 sentence case description summarizing the incident and current impact. Output only the description."
+
+  - name: create_case
+    type: cases.createCase
+    with:
+      title: "{{ steps.case_title.output.message | truncate: 160 }}"
+      description: "{{ steps.case_description.output.message }}"
+      owner: "observability"
+      severity: "high"
+      tags: ["auto-rca", "ai-generated", "checkout", "fraud-shield"]
+
+  - name: attach_alert
+    type: cases.addAlerts
+    with:
+      case_id: "{{ steps.create_case.output.case.id }}"
+      alerts:
+        - alertId: "{{ inputs.alerts[0]._id }}"
+          index: "{{ inputs.alerts[0]._index }}"
+          rule:
+            id: "{{ inputs.rule.id }}"
+            name: "{{ inputs.rule.name }}"
+
+  - name: add_analysis
+    type: cases.addComment
+    with:
+      case_id: "{{ steps.create_case.output.case.id }}"
+      comment: |
+        ## Automated root-cause analysis
+        {{ steps.rca_analysis.output.message }}
+
+  - name: add_remediation
+    type: cases.addComment
+    with:
+      case_id: "{{ steps.create_case.output.case.id }}"
+      comment: |
+        ## Recommended remediation (recommend-only — human applies)
+        {{ steps.remediation.output.message }}
+
+  - name: get_conversation
+    type: kibana.request
+    with:
+      method: GET
+      path: /api/agent_builder/conversations/{{ steps.rca_analysis.output.conversation_id }}
+
+  - name: add_reasoning
+    type: cases.addComment
+    with:
+      case_id: "{{ steps.create_case.output.case.id }}"
+      comment: |
+        ## AI investigation trace
+        [View full conversation]({{ kibanaUrl }}/app/agent_builder/conversations/{{ steps.rca_analysis.output.conversation_id }})
+        {%- for round in steps.get_conversation.output.rounds %}{%- for step in round.steps %}{%- if step.type == "reasoning" %}
+        - **Reasoning:** {{ step.reasoning }}
+        {%- elsif step.type == "tool_call" %}
+        - **Action:** `{{ step.tool_id }}`
+        {%- endif %}{%- endfor %}{%- endfor %}

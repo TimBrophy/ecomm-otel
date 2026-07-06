@@ -2,6 +2,7 @@
 .env.*
 !.env.example
 .elastic-credentials
+.autonomous-sre.log
 
 # Tooling / local session state
 .claude/

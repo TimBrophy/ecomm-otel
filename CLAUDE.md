@@ -191,6 +191,7 @@ All services → **EDOT collectors** → **Elastic Cloud Serverless (Observabili
 - Ad-hoc PromQL query showing checkout latency grouped by the `realtime_fraud_detection` flag state (`checkout.latency_ms`) — same OTel metrics, no separate Prometheus server
 - Distributed profiling (Universal Profiling) showing hot method in Java service
 - Root cause: feature flag toggle or deployment event visible in timeline
+- Autonomous investigation: an Elastic Workflow + Agent Builder agent independently investigates the same incident in the background and opens a Kibana Case with a cited RCA + remediation before the manual walkthrough finishes
 
 ### UC2 — SLOs on service maps and commercial funnels
 
@@ -235,6 +236,7 @@ All services → **EDOT collectors** → **Elastic Cloud Serverless (Observabili
 4. **Single platform** — logs, traces, metrics, RUM, profiling in one correlated view (no context switching)
 5. **Kibana-as-code** — Terraform provider + saved objects API = real GitOps story
 6. **EDOT** — Elastic Distribution of OTel; official, supported, upstream-compatible
+7. **Agentic investigation** — Workflows + Agent Builder turn an alert into a fully-investigated Case, grounded in your own runbooks, before a human opens a tab
 
 ---
 
@@ -285,7 +287,11 @@ ecomm-otel/
 │   ├── dashboards/
 │   ├── alerts/
 │   ├── slos/
-│   └── rbac/
+│   ├── rbac/
+│   ├── runbooks/              # SRE playbooks (sre-runbooks index, semantic search)
+│   ├── agent-tools/           # Agent Builder custom tools
+│   ├── agents/                # Agent Builder agents (autonomous-SRE)
+│   └── workflows/             # Elastic Workflows (RCA + Case automation)
 ├── teams/
 │   └── checkout/              # team-layer extensions (TO BUILD)
 ├── infra/

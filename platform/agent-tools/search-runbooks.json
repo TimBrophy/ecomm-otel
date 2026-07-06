@@ -1,0 +1,9 @@
+{
+  "id": "search_runbooks",
+  "type": "index_search",
+  "description": "Semantic search over the SRE runbook/playbook knowledge base (sre-runbooks). Use this before recommending any remediation, to find the specific playbook that matches the incident's symptoms. Returns the matching playbook's title, service, and full remediation content — cite the playbook title and its step numbers in your recommendation rather than inventing remediation steps.",
+  "tags": ["sre", "runbooks", "remediation"],
+  "configuration": {
+    "pattern": "sre-runbooks"
+  }
+}

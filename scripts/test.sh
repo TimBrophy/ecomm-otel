@@ -316,6 +316,62 @@ print(len(wired))
   fi
 fi
 
+# ── UC5: Autonomous SRE (knowledge base + Agent Builder + workflow) ────────────
+
+section "UC5: Knowledge base — runbook docs indexed"
+
+if [[ -z "${ES_URL}" ]]; then
+  skip "ELASTICSEARCH_URL not set"
+else
+  KB_COUNT=$(es_count "sre-runbooks")
+  if [[ "${KB_COUNT}" -ge 3 ]]; then
+    pass "sre-runbooks has ${KB_COUNT} doc(s)"
+  else
+    fail "sre-runbooks has ${KB_COUNT} doc(s) — expected ≥ 3 (run provision-knowledge-base)"
+  fi
+fi
+
+section "UC5: Agent Builder — autonomous-SRE agent and tool exist"
+
+if [[ -z "${KIBANA_URL}" ]]; then
+  skip "KIBANA_URL not set"
+else
+  AGENT_CODE=$(http_status -H "Authorization: ApiKey ${ELASTIC_INGEST_API_KEY}" -H "kbn-xsrf: true" \
+    "${KIBANA_URL}/api/agent_builder/agents/ecomm-sre-rca")
+  if [[ "${AGENT_CODE}" == "200" ]]; then
+    pass "ecomm-sre-rca agent present"
+  else
+    fail "ecomm-sre-rca agent missing (HTTP ${AGENT_CODE}) — run provision-agent-builder"
+  fi
+
+  TOOL_CODE=$(http_status -H "Authorization: ApiKey ${ELASTIC_INGEST_API_KEY}" -H "kbn-xsrf: true" \
+    "${KIBANA_URL}/api/agent_builder/tools/search_runbooks")
+  if [[ "${TOOL_CODE}" == "200" ]]; then
+    pass "search_runbooks tool present"
+  else
+    fail "search_runbooks tool missing (HTTP ${TOOL_CODE}) — run provision-agent-builder"
+  fi
+fi
+
+section "UC5: Workflow exists and is enabled"
+
+if [[ -z "${KIBANA_URL}" ]]; then
+  skip "KIBANA_URL not set"
+else
+  WF_RESP=$(curl -sf -H "Authorization: ApiKey ${ELASTIC_INGEST_API_KEY}" -H "kbn-xsrf: true" \
+    "${KIBANA_URL}/api/workflows?query=ecomm-otel" 2>/dev/null || echo '{}')
+  WF_STATE=$(echo "${WF_RESP}" | python3 -c "
+import sys,json
+d=json.load(sys.stdin)
+w=next((w for w in d.get('results', d.get('data',[])) if w.get('name')=='ecomm-otel--autonomous-sre-rca'), None)
+print('yes' if w and w.get('enabled') else ('disabled' if w else 'missing'))" 2>/dev/null || echo "error")
+  case "${WF_STATE}" in
+    yes)      pass "Autonomous SRE workflow present and enabled" ;;
+    disabled) fail "Autonomous SRE workflow exists but is disabled" ;;
+    *)        fail "Autonomous SRE workflow ${WF_STATE} — run provision-workflows" ;;
+  esac
+fi
+
 # ── UC3: IaC / GitOps ─────────────────────────────────────────────────────────
 
 section "UC3: GitOps layer structure"

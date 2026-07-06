@@ -32,6 +32,9 @@ Granular commands:
   provision-connector  (Re-)create Slack API connector in Kibana
   refresh-key         Mint a fresh ingest API key and restart the collector
   provision-slos      (Re-)deploy SLOs to Kibana
+  provision-knowledge-base  (Re-)index runbook/playbook docs into sre-runbooks
+  provision-agent-builder   (Re-)deploy Agent Builder tools + autonomous-SRE agent
+  provision-workflows       (Re-)deploy incident-response workflows from platform/workflows/
   provision-alerts    (Re-)deploy Kibana alert rules from platform/alerts/
   provision-spaces    (Re-)deploy Kibana spaces from platform/spaces/
   provision-rbac      (Re-)deploy Kibana roles from platform/rbac/
@@ -493,6 +496,201 @@ for r in d.get('results', []):
   echo "✓ SLOs provisioned"
 }
 
+# ── Knowledge base provisioning ────────────────────────────────────────────────
+# Runbook/playbook docs live in platform/runbooks/*.json. Indexed into
+# sre-runbooks with a semantic_text `content` field (default ELSER inference
+# endpoint — no separate inference-endpoint setup needed on this cluster).
+# Doc _id = filename basename, so re-runs overwrite in place (idempotent).
+
+provision_knowledge_base() {
+  echo "→ Provisioning knowledge base"
+  local KB_DIR="${ROOT_DIR}/platform/runbooks"
+  local INDEX="sre-runbooks"
+  local AUTH="Authorization: ApiKey ${ELASTIC_INGEST_API_KEY}"
+
+  if [[ ! -d "${KB_DIR}" ]] || [[ -z "$(ls "${KB_DIR}"/*.json 2>/dev/null)" ]]; then
+    echo "  (no runbook docs found in ${KB_DIR})"
+    return 0
+  fi
+
+  # Create the index. 400 (resource_already_exists_exception) is success —
+  # matches the idempotent-PUT spirit used elsewhere in this file. Note: this
+  # only creates the index; changing the mapping on an existing index requires
+  # a separate _mapping PUT (new fields) or delete+recreate (changed field type).
+  local CREATE_CODE
+  CREATE_CODE=$(curl -s -o /tmp/kb_idx.json -w "%{http_code}" -X PUT \
+    "${ELASTICSEARCH_URL}/${INDEX}" \
+    -H "${AUTH}" -H "Content-Type: application/json" \
+    -d '{
+      "mappings": {
+        "properties": {
+          "title": {"type": "keyword"},
+          "service": {"type": "keyword"},
+          "applies_when": {"type": "text"},
+          "content": {"type": "semantic_text"}
+        }
+      }
+    }')
+  if [[ "${CREATE_CODE}" == "200" ]]; then
+    echo "  ✓ index ${INDEX} created"
+  elif [[ "${CREATE_CODE}" == "400" ]]; then
+    echo "  – index ${INDEX} already exists"
+  else
+    echo "  ✗ index create failed (HTTP ${CREATE_CODE}): $(cat /tmp/kb_idx.json 2>/dev/null)"
+    rm -f /tmp/kb_idx.json
+    return 1
+  fi
+
+  # Bulk-index every doc, fixed _id = filename basename.
+  : > /tmp/kb_bulk.ndjson
+  local COUNT=0
+  for DOC in "${KB_DIR}"/*.json; do
+    [[ -f "${DOC}" ]] || continue
+    local DOC_ID; DOC_ID=$(basename "${DOC}" .json)
+    printf '{"index":{"_index":"%s","_id":"%s"}}\n' "${INDEX}" "${DOC_ID}" >> /tmp/kb_bulk.ndjson
+    python3 -c "import json,sys; print(json.dumps(json.load(open(sys.argv[1]))))" "${DOC}" >> /tmp/kb_bulk.ndjson
+    COUNT=$((COUNT + 1))
+  done
+
+  local BULK_CODE
+  BULK_CODE=$(curl -s -o /tmp/kb_bulk_resp.json -w "%{http_code}" -X POST \
+    "${ELASTICSEARCH_URL}/_bulk?refresh=wait_for" \
+    -H "${AUTH}" -H "Content-Type: application/x-ndjson" \
+    --data-binary @/tmp/kb_bulk.ndjson)
+  local ERRORS
+  ERRORS=$(python3 -c "import json; print(json.load(open('/tmp/kb_bulk_resp.json')).get('errors', True))" 2>/dev/null || echo "True")
+  if [[ "${BULK_CODE}" =~ ^2 && "${ERRORS}" == "False" ]]; then
+    echo "  ✓ indexed ${COUNT} runbook doc(s)"
+  else
+    echo "  ✗ bulk index failed (HTTP ${BULK_CODE}): $(head -c 400 /tmp/kb_bulk_resp.json 2>/dev/null)"
+  fi
+
+  rm -f /tmp/kb_idx.json /tmp/kb_bulk.ndjson /tmp/kb_bulk_resp.json
+  echo "✓ Knowledge base provisioned"
+}
+
+# ── Agent Builder provisioning ──────────────────────────────────────────────────
+# Custom tools live in platform/agent-tools/*.json, the agent in
+# platform/agents/*.json. Tools are provisioned first since the agent
+# references their ids. Idempotent via POST (create); on 400/409 (already
+# exists) falls back to PUT /{id} (update).
+
+provision_agent_builder() {
+  echo "→ Provisioning Agent Builder"
+  local KIBANA="${KIBANA_URL}"
+  local AUTH="Authorization: ApiKey ${ELASTIC_INGEST_API_KEY}"
+
+  _ab_upsert() {
+    local KIND="$1" FILE="$2" RID
+    RID=$(python3 -c "import json; print(json.load(open('${FILE}'))['id'])" 2>/dev/null)
+    local CODE
+    CODE=$(curl -s -o /tmp/ab_resp.json -w "%{http_code}" -X POST \
+      "${KIBANA}/api/agent_builder/${KIND}" \
+      -H "${AUTH}" -H "kbn-xsrf: true" -H "Content-Type: application/json" \
+      -d @"${FILE}")
+    if [[ "${CODE}" == "409" || "${CODE}" == "400" ]]; then
+      # PUT (update) rejects 'id' and 'type' in the body — both are immutable,
+      # implied by the URL — so strip them before re-sending.
+      local UPDATE_PAYLOAD
+      UPDATE_PAYLOAD=$(python3 -c "
+import json
+d = json.load(open('${FILE}'))
+d.pop('id', None); d.pop('type', None)
+print(json.dumps(d))
+")
+      CODE=$(curl -s -o /tmp/ab_resp.json -w "%{http_code}" -X PUT \
+        "${KIBANA}/api/agent_builder/${KIND}/${RID}" \
+        -H "${AUTH}" -H "kbn-xsrf: true" -H "Content-Type: application/json" \
+        -d "${UPDATE_PAYLOAD}")
+      if [[ "${CODE}" =~ ^2 ]]; then
+        echo "  ↻ ${KIND%s}: ${RID} (updated)"
+      else
+        echo "  ✗ ${KIND%s}: ${RID} (HTTP ${CODE}): $(head -c 300 /tmp/ab_resp.json 2>/dev/null)"
+      fi
+    elif [[ "${CODE}" =~ ^2 ]]; then
+      echo "  ✓ ${KIND%s}: ${RID} (created)"
+    else
+      echo "  ✗ ${KIND%s}: ${RID} (HTTP ${CODE}): $(head -c 300 /tmp/ab_resp.json 2>/dev/null)"
+    fi
+  }
+
+  local TOOLS_DIR="${ROOT_DIR}/platform/agent-tools"
+  local AGENTS_DIR="${ROOT_DIR}/platform/agents"
+  if [[ -d "${TOOLS_DIR}" ]]; then
+    for T in "${TOOLS_DIR}"/*.json; do [[ -f "${T}" ]] && _ab_upsert tools "${T}"; done
+  fi
+  if [[ -d "${AGENTS_DIR}" ]]; then
+    for A in "${AGENTS_DIR}"/*.json; do [[ -f "${A}" ]] && _ab_upsert agents "${A}"; done
+  fi
+
+  rm -f /tmp/ab_resp.json
+  echo "✓ Agent Builder provisioned"
+}
+
+# ── Workflow provisioning ───────────────────────────────────────────────────────
+# Workflow definitions live in platform/workflows/*.yaml.
+# POST /api/workflows takes a bulk {"workflows":[{"yaml": "..."}]} envelope,
+# but is NOT idempotent by name — re-POSTing (even with ?overwrite=true, which
+# does something else entirely) creates a duplicate workflow every time.
+# So provisioning here follows the same find-then-POST/PUT pattern as SLOs:
+# look up an existing workflow by name, PUT /api/workflows/workflow/{id} to
+# update it if found, POST (bulk, single-item) to create it otherwise.
+
+provision_workflows() {
+  echo "→ Provisioning workflows"
+  local KIBANA="${KIBANA_URL}"
+  local AUTH="Authorization: ApiKey ${ELASTIC_INGEST_API_KEY}"
+  local WF_DIR="${ROOT_DIR}/platform/workflows"
+
+  if [[ ! -d "${WF_DIR}" ]] || [[ -z "$(ls "${WF_DIR}"/*.yaml 2>/dev/null)" ]]; then
+    echo "  (no workflow definitions found in ${WF_DIR})"
+    return 0
+  fi
+
+  for WF_FILE in "${WF_DIR}"/*.yaml; do
+    [[ -f "${WF_FILE}" ]] || continue
+    local WF_NAME
+    WF_NAME=$(python3 -c "import yaml; print(yaml.safe_load(open('${WF_FILE}'))['name'])" 2>/dev/null)
+
+    local EXISTING_WF_ID
+    EXISTING_WF_ID=$(curl -sf "${KIBANA}/api/workflows?query=${WF_NAME}" \
+      -H "${AUTH}" -H "kbn-xsrf: true" 2>/dev/null | python3 -c "
+import sys, json
+d = json.load(sys.stdin)
+for w in d.get('results', d.get('data', [])):
+    if w.get('name') == '${WF_NAME}':
+        print(w['id']); break
+" 2>/dev/null || echo "")
+
+    local YAML_PAYLOAD
+    YAML_PAYLOAD=$(python3 -c "import json; print(json.dumps(open('${WF_FILE}').read()))")
+
+    local HTTP_CODE
+    if [[ -n "${EXISTING_WF_ID}" ]]; then
+      echo "  Updating: ${WF_NAME} (${EXISTING_WF_ID})"
+      HTTP_CODE=$(curl -s -o /tmp/wf_resp.json -w "%{http_code}" -X PUT \
+        "${KIBANA}/api/workflows/workflow/${EXISTING_WF_ID}" \
+        -H "${AUTH}" -H "kbn-xsrf: true" -H "Content-Type: application/json" \
+        -d "{\"yaml\": ${YAML_PAYLOAD}}")
+    else
+      echo "  Creating: ${WF_NAME}"
+      HTTP_CODE=$(curl -s -o /tmp/wf_resp.json -w "%{http_code}" -X POST \
+        "${KIBANA}/api/workflows" \
+        -H "${AUTH}" -H "kbn-xsrf: true" -H "Content-Type: application/json" \
+        -d "{\"workflows\": [{\"yaml\": ${YAML_PAYLOAD}}]}")
+    fi
+
+    if [[ "${HTTP_CODE}" =~ ^2 ]]; then
+      echo "  ✓ ${WF_NAME}"
+    else
+      echo "  ✗ ${WF_NAME} failed (HTTP ${HTTP_CODE}): $(head -c 300 /tmp/wf_resp.json 2>/dev/null)"
+    fi
+  done
+
+  rm -f /tmp/wf_resp.json
+  echo "✓ Workflows provisioned"
+}
+
 # ── Alert rule provisioning ───────────────────────────────────────────────────
 # Alert definitions live in platform/alerts/*.json.
 # Rules are created via /api/alerting/rule and are idempotent by name.
@@ -774,6 +972,11 @@ tf_apply() {
 
   # ── Provision SLOs ──
   provision_slos
+
+  # ── Provision autonomous-SRE knowledge base, Agent Builder tools/agent, workflow ──
+  provision_knowledge_base
+  provision_agent_builder
+  provision_workflows
 
   # ── Provision alert rules (depends on SLO IDs + Slack connector from above) ──
   provision_alerts
@@ -1074,6 +1277,96 @@ teardown_all() {
 
 # ── Demo controls ─────────────────────────────────────────────────────────────
 
+# Waits for the checkout-latency-spike rule to actually fire (real alert doc
+# in .alerts-*), then kicks off the autonomous-SRE workflow with an `inputs`
+# payload shaped exactly like the native alert-trigger event
+# (event.alerts[0]._id/_index, event.rule.id/name) — see the note at the top
+# of platform/workflows/autonomous-sre-rca.yaml for why this exists instead of
+# the rule's own "Run Workflow" action. Meant to be run in the background;
+# logs to ${ROOT_DIR}/.autonomous-sre.log since stdout is detached.
+_run_autonomous_investigation() {
+  local KIBANA="${KIBANA_URL}" AUTH="Authorization: ApiKey ${ELASTIC_INGEST_API_KEY}"
+  local RULE_NAME="Checkout — Latency Spike (Incident Alert)"
+  local TRIGGERED_AT; TRIGGERED_AT=$(python3 -c "import datetime; print(datetime.datetime.now(datetime.timezone.utc).isoformat())")
+
+  echo "[$(date)] waiting for '${RULE_NAME}' to fire..."
+
+  local RULE_ID
+  RULE_ID=$(curl -sf "${KIBANA}/api/alerting/rules/_find?per_page=50" -H "${AUTH}" -H "kbn-xsrf: true" 2>/dev/null | python3 -c "
+import sys, json
+d = json.load(sys.stdin)
+for r in d.get('data', []):
+    if r.get('name') == '${RULE_NAME}':
+        print(r['id']); break
+" 2>/dev/null || echo "")
+  if [[ -z "${RULE_ID}" ]]; then
+    echo "[$(date)] ✗ could not find rule '${RULE_NAME}' — aborting"; return 1
+  fi
+
+  # Poll for a fresh ACTIVE alert doc from this rule (up to ~4 minutes —
+  # the rule runs on a 1m schedule over a 5m window).
+  local ALERT_ID="" ALERT_INDEX="" ATTEMPT=0
+  while [[ ${ATTEMPT} -lt 16 ]]; do
+    ATTEMPT=$((ATTEMPT + 1))
+    sleep 15
+    local HIT
+    HIT=$(curl -sf -X POST "${ELASTICSEARCH_URL}/.alerts-*/_search" -H "${AUTH}" -H "Content-Type: application/json" -d "{
+      \"size\": 1,
+      \"sort\": [{\"@timestamp\": \"desc\"}],
+      \"query\": {\"bool\": {\"filter\": [
+        {\"term\": {\"kibana.alert.rule.uuid\": \"${RULE_ID}\"}},
+        {\"term\": {\"kibana.alert.status\": \"active\"}},
+        {\"range\": {\"@timestamp\": {\"gte\": \"${TRIGGERED_AT}\"}}}
+      ]}}
+    }" 2>/dev/null) || true
+    ALERT_ID=$(echo "${HIT}" | python3 -c "
+import sys,json
+d=json.load(sys.stdin)
+hits=d.get('hits',{}).get('hits',[])
+print(hits[0]['_id'] if hits else '')" 2>/dev/null || echo "")
+    ALERT_INDEX=$(echo "${HIT}" | python3 -c "
+import sys,json
+d=json.load(sys.stdin)
+hits=d.get('hits',{}).get('hits',[])
+print(hits[0]['_index'] if hits else '')" 2>/dev/null || echo "")
+    if [[ -n "${ALERT_ID}" ]]; then
+      echo "[$(date)] ✓ alert fired (${ALERT_ID}) after ~$((ATTEMPT * 15))s"
+      break
+    fi
+    echo "[$(date)] attempt ${ATTEMPT}/16: no active alert yet"
+  done
+  if [[ -z "${ALERT_ID}" ]]; then
+    echo "[$(date)] ✗ rule never fired within ~4 minutes — aborting"; return 1
+  fi
+
+  local WORKFLOW_ID
+  WORKFLOW_ID=$(curl -sf "${KIBANA}/api/workflows?query=ecomm-otel--autonomous-sre-rca" -H "${AUTH}" -H "kbn-xsrf: true" 2>/dev/null | python3 -c "
+import sys, json
+d = json.load(sys.stdin)
+for w in d.get('results', d.get('data', [])):
+    if w.get('name') == 'ecomm-otel--autonomous-sre-rca':
+        print(w['id']); break
+" 2>/dev/null || echo "")
+  if [[ -z "${WORKFLOW_ID}" ]]; then
+    echo "[$(date)] ✗ autonomous-sre-rca workflow not found — run provision-workflows"; return 1
+  fi
+
+  local RUN_INPUTS
+  RUN_INPUTS=$(python3 -c "
+import json
+print(json.dumps({'inputs': {
+    'alerts': [{'_id': '${ALERT_ID}', '_index': '${ALERT_INDEX}'}],
+    'rule': {'id': '${RULE_ID}', 'name': '${RULE_NAME}'},
+    'incident_started_at': '${TRIGGERED_AT}'
+}}))
+")
+  local RUN_RESP
+  RUN_RESP=$(curl -sf -X POST "${KIBANA}/api/workflows/workflow/${WORKFLOW_ID}/run" \
+    -H "${AUTH}" -H "kbn-xsrf: true" -H "Content-Type: application/json" \
+    -d "${RUN_INPUTS}" 2>/dev/null) || true
+  echo "[$(date)] workflow run triggered: ${RUN_RESP}"
+}
+
 trigger_incident() {
   local FLAG_URL="${FLAG_SERVICE_URL:-http://localhost:8090}"
   echo "→ Triggering incident: realtime_fraud_detection=true"
@@ -1087,6 +1380,12 @@ trigger_incident() {
     -d '{"name":"realtime_fraud_detection","value":true}' | python3 -m json.tool
   echo ""
   echo "  Run './scripts/demo.sh reset' to restore normal behaviour."
+
+  if [[ -n "${KIBANA_URL:-}" && -n "${ELASTIC_INGEST_API_KEY:-}" ]]; then
+    echo "  → Autonomous SRE investigation starting in the background"
+    echo "    (log: ${ROOT_DIR}/.autonomous-sre.log)"
+    ( _run_autonomous_investigation >> "${ROOT_DIR}/.autonomous-sre.log" 2>&1 & disown )
+  fi
 }
 
 reset_demo() {
@@ -1113,6 +1412,9 @@ case "${1:-}" in
   provision-ml)      provision_ml_jobs ;;
   provision-alerts)  provision_alerts ;;
   provision-slos)            provision_slos ;;
+  provision-knowledge-base)  provision_knowledge_base ;;
+  provision-agent-builder)   provision_agent_builder ;;
+  provision-workflows)       provision_workflows ;;
   provision-spaces)          provision_spaces ;;
   provision-rbac)            provision_rbac ;;
   provision-product-team)    provision_product_team ;;

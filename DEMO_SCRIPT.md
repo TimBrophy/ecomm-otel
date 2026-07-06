@@ -29,6 +29,8 @@ docker compose ps
 #   - Kibana > Spaces > product-team > Dashboards > "Checkout Business Overview"
 #   - Kibana > Discover (metrics-* data view)
 #   - Dev Tools (for ES|QL)
+#   - Kibana > Observability > Cases
+#   - Kibana > Agent Builder > Conversations
 ```
 
 **If collector shows 403:** `./scripts/demo.sh refresh-key` — takes ~60s.
@@ -235,6 +237,57 @@ Show the Kafka spans — producer and consumer linked by `trace_id`.
 > PII handling note: card numbers and email addresses in checkout spans are masked 
 > at the service level before they reach the collector. That's a GDPR guarantee, 
 > not a process — the field never hits the wire unmasked."
+
+### 1.8 The autonomous SRE (3 min) — "oh, by the way"
+
+> "One more thing. Remember that terminal command back at the start — `trigger-incident`? 
+> That didn't just flip a flag. It also kicked off an autonomous investigation, running 
+> the whole time I was doing this by hand."
+
+Navigate: **Observability > Cases**
+
+> "The `checkout-latency-spike` alert fired about a minute after I triggered the incident. 
+> That handed the alert to an Elastic Workflow, which handed it to an Agent Builder agent — 
+> and by the time I'd finished clicking through traces, there was already a case open."
+
+Open the auto-created case. Title will read something like *"checkout-service p99 Latency 
+Spike Caused by Synchronous FraudShield Calls via realtime_fraud_detection Feature Flag."*
+
+Walk through its comments, top to bottom:
+
+1. **Automated root-cause analysis** —
+> "It ran its own ES|QL — not the alert payload, its own investigation — and landed on the 
+> same numbers I found by hand: p99 up from 7ms to over 1,200ms, checkout-service confirmed 
+> as the top offender, the fraud_check span as the dominant contributor."
+
+2. **Recommended remediation (recommend-only)** —
+> "Here's the part I care about most. It didn't freelance a fix. It searched a knowledge 
+> base of our own SRE runbooks — semantic search with ELSER, live in Elasticsearch — found 
+> RB-101, the FraudShield degradation playbook, and grounded every recommendation in it. 
+> First step, cited by name: 'RB-101, Step 1 — disable the realtime_fraud_detection flag.' 
+> Then the durable fix straight from the playbook: move the check off the synchronous path, 
+> or raise the vendor SDK's pool size and add a circuit breaker. It's not guessing — it's 
+> citing."
+
+3. **AI investigation trace** —
+> "And it shows its work. Every reasoning step, every tool call — including the runbook 
+> search and the revenue queries — linked to the live agent conversation. Full audit trail."
+
+Close the loop live:
+
+> "It recommends; a human decides. So let me be that human."
+
+Run in terminal:
+
+```bash
+./scripts/demo.sh reset
+```
+
+> "That's the playbook's own first step. Watch checkout latency recover. The agent 
+> investigated, correlated against our own documented incident history, and drafted a cited 
+> remediation in the time it took me to open a few tabs — and it never touched production on 
+> its own. That's the force multiplier: it does the first few minutes of every incident 
+> before you've finished your coffee."
 
 ---
 

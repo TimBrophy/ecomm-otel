@@ -142,6 +142,9 @@ Single confirmation, destroys everything in the right order: AWS first (while cr
 | `reset` | Reset feature flags to clean baseline |
 | `refresh-key` | Mint fresh ingest API key + restart collector |
 | `provision-slos` | Re-deploy SLOs to Kibana |
+| `provision-knowledge-base` | Re-index SRE runbook/playbook docs into `sre-runbooks` |
+| `provision-agent-builder` | Re-deploy Agent Builder tools + the autonomous-SRE agent |
+| `provision-workflows` | Re-deploy the autonomous RCA workflow |
 | `provision-alerts` | Re-deploy alert rules to Kibana |
 | `provision-spaces` | Re-deploy Kibana spaces |
 | `provision-rbac` | Re-deploy Kibana RBAC roles |
