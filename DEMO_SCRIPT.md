@@ -13,7 +13,7 @@
 # 1. Confirm all containers are up
 docker compose ps
 
-# 2. Run smoke tests — must be 43/43 before you start
+# 2. Run smoke tests — must be 45/45 before you start
 ./scripts/demo.sh test
 
 # 3. Confirm data is fresh (last 5 min)
@@ -22,7 +22,11 @@ docker compose ps
 # 4. Reset demo flags to clean baseline
 ./scripts/demo.sh reset
 
-# 5. Open these tabs in advance:
+# 5. Open the profiling Kibana tab (stateful ESS — separate from Serverless):
+#    ${PROFILING_KIBANA_URL}
+#    Navigate: Observability > Universal Profiling
+
+# 6. Open these tabs in advance:
 #   - Kibana > Observability > APM > Services
 #   - Kibana > Observability > SLOs
 #   - Kibana > Observability > Infrastructure > Hosts
@@ -616,7 +620,7 @@ curl -s "${KIBANA_URL}/api/observability/slos?size=100" \
 | "What about OpenSLO?" | "We don't parse OpenSLO YAML today. Our SLO config format is JSON, Git-managed, API-deployed — the openness principle is there, the specific format isn't OpenSLO yet." |
 | "Can we bring our own collectors?" | "Yes — any OTel-compatible collector works. We ship EDOT (our supported distribution) but the endpoint accepts standard OTLP from any collector, including Grafana Alloy or the upstream collector." |
 | "What about multi-cloud?" | "The collector runs anywhere — ECS, GKE, on-prem. It forwards to a single Elastic Cloud endpoint. You get a unified view across all your environments." |
-| "Universal Profiling?" | "Continuous profiling, zero code changes, correlates with traces. Available in Elastic Cloud. I can show you the profiling view if you want to go deeper." |
+| "Universal Profiling?" | "We have it running — separate stateful ESS deployment, EC2 host with Elastic Agent, synthetic Java workload generating flame graphs. trigger-incident mirrors the FraudShield bottleneck in the flame graph. Navigate to the profiling Kibana tab to show it live." |
 | "Cost at 25 TB/day?" | "Bring your AE — this needs a proper sizing conversation. Rough order: hot retention is the expensive tier, ILM to warm/frozen dramatically reduces cost for aged data. I can set up a technical sizing call." |
 
 ---
@@ -643,6 +647,11 @@ curl -s "${KIBANA_URL}/api/observability/slos?size=100" \
 
 # Reprovision Fleet agent policy + enrollment token
 ./scripts/demo.sh provision-fleet
+
+# Universal Profiling (stateful ESS deployment)
+./scripts/demo.sh provision-profiling-deployment  # (one-time) create stateful deployment + enroll EC2
+./scripts/demo.sh apply-profiling-host            # rebuild EC2 host enrolled to stateful Fleet
+./scripts/demo.sh deploy-profiling-stress         # start CheckoutStress workload on EC2 (flame graphs)
 
 # Fix 403 on collector
 ./scripts/demo.sh refresh-key
@@ -674,6 +683,6 @@ Be transparent — technically sophisticated audiences will ask:
 | Mobile RUM | ❌ | Load generator sends mobile-shaped requests |
 | AWS Lambda | ❌ | Not wired in this build |
 | Fleet-managed Elastic Agent | ✅ Enrolled, system integration collecting host metrics | — |
-| Universal Profiling | — | Available in Elastic Cloud; requires Linux host with BTF kernel |
+| Universal Profiling | ✅ Stateful ESS deployment (`ecomm-otel-demo-profiling`), EC2 host enrolled to Fleet, CheckoutStress Java workload generating flame graphs | — |
 | Alert rules (latency, errors, SLO burn rate) | ✅ 4 rules provisioned, fire during trigger-incident | — |
-| Slack alert routing | ✅ Slack API connector provisioned via Terraform (`TF_VAR_slack_token` + `TF_VAR_slack_channel_id`); wired to all 3 alert rules | — |
+| Slack alert routing | ✅ Slack API connector provisioned via Terraform (`TF_VAR_slack_token` + `TF_VAR_slack_channel_id`); wired to all 4 alert rules | — |

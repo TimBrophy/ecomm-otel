@@ -504,6 +504,36 @@ print(rows[0][0] if rows else 0)" 2>/dev/null || echo "0")
   fi
 fi
 
+# ── Universal Profiling: stateful ESS deployment ──────────────────────────────
+
+section "Universal Profiling: stateful ESS deployment"
+
+if [[ -z "${PROFILING_KIBANA_URL:-}" ]]; then
+  skip "PROFILING_KIBANA_URL not set — skipping Universal Profiling checks"
+  skip "EC2 profiling host online in Fleet"
+else
+  PROF_KB_STATUS=$(http_status \
+    -u "${PROFILING_ES_USER:-elastic}:${PROFILING_ES_PASSWORD:-}" \
+    "${PROFILING_KIBANA_URL}/api/status")
+  if [[ "${PROF_KB_STATUS}" == "200" ]]; then
+    pass "Stateful Kibana reachable"
+  else
+    fail "Stateful Kibana returned HTTP ${PROF_KB_STATUS}"
+  fi
+
+  FLEET_RESP=$(curl -s \
+    -u "${PROFILING_ES_USER:-elastic}:${PROFILING_ES_PASSWORD:-}" \
+    "${PROFILING_KIBANA_URL}/api/fleet/agents?kuery=status:online&perPage=20" \
+    2>/dev/null || echo '{"total":0}')
+  FLEET_ONLINE=$(echo "${FLEET_RESP}" | python3 -c "
+import sys,json; d=json.load(sys.stdin); print(d.get('total',0))" 2>/dev/null || echo "0")
+  if [[ "${FLEET_ONLINE}" -ge 1 ]]; then
+    pass "EC2 profiling host online in Fleet (${FLEET_ONLINE} agent(s))"
+  else
+    fail "EC2 profiling host online in Fleet — 0 online agents (run 'apply-profiling-host')"
+  fi
+fi
+
 # ── SUMMARY ───────────────────────────────────────────────────────────────────
 
 echo ""

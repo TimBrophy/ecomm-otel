@@ -27,7 +27,7 @@ Browser / Mobile
                 │
                 └──▶ feature-flag-service (Node.js) ◀── polled every 5s
 
-EC2 profiling host (Elastic Agent 9.4.3 + OTel profiling integration)
+EC2 profiling host (Elastic Agent 9.4.3 — enrolled to stateful ESS Fleet for Universal Profiling)
 ```
 
 All services export traces, logs, and metrics via OTLP to an **EDOT collector**, which forwards to **Elastic Cloud Serverless**.
@@ -84,7 +84,7 @@ This is the only command you need to run. It does everything in order:
 | 1 | Workflows | Deploys the autonomous RCA incident-response workflow |
 | 1 | Product team project | Creates the product-team Serverless project, links it via Cross-Project Search, deploys the Checkout Business Overview dashboard |
 | 2 | Fleet policy | Creates Fleet agent policy + system integration via Kibana API |
-| 2 | EC2 instance | Launches Amazon Linux 2023 with Elastic Agent 9.4.3 enrolled to Fleet |
+| 2 | EC2 instance | Creates Fleet policy in stateful ESS deployment; launches EC2 host with Elastic Agent enrolled to stateful Fleet |
 
 ### 3. Manual step — APM Anomaly Detection (optional, UC2)
 
@@ -139,6 +139,7 @@ Single confirmation, destroys everything in the right order: AWS first (while cr
 | `apply` | Elastic Cloud + Docker only (no AWS) |
 | `destroy` | Elastic Cloud + Docker only |
 | `apply-aws` | Fleet policy + EC2 profiling host (requires `apply` first) |
+| `apply-profiling-host` | Destroy + rebuild EC2 host enrolled to stateful ESS Fleet (Universal Profiling) |
 | `deploy-profiling-stress` | Install + start synthetic checkout workload on EC2 host (generates profiling flame graphs) |
 | `destroy-aws` | Destroy EC2 profiling host only |
 | `test` | Smoke tests against local stack + Elastic Cloud |
@@ -235,6 +236,7 @@ Elastic Cloud Serverless
 | Local dev | Docker Compose | `docker-compose.yml` |
 | Elastic Cloud (Serverless) | Terraform + Kibana API | `infra/elastic/` |
 | AWS EC2 (profiling host) | Terraform | `infra/aws/` |
+| Stateful ESS (Universal Profiling) | EC REST API (in demo.sh) | EC deployment `ecomm-otel-demo-profiling` |
 
 The EC2 instance runs Amazon Linux 2023 (BTF kernel support for eBPF profiling) with Elastic Agent 9.4.3. It is tagged with the required Elastic SA AWS org policy tags (`division`, `org`, `team`, `project`, `keep-until`) and uses an IAM SSM instance profile — no SSH key required.
 
