@@ -241,6 +241,50 @@ PROMQL index=metrics-generic.otel-default step=1s checkout_latency_ms=(avg by (a
 > OTel metric data as everything else in this stack — just PromQL syntax, grouped by 
 > label, exactly like your Grafana dashboards do today."
 
+**Native ES|QL time series — the `TS` command:** stay in **Discover** → ES|QL mode.
+
+> "Now I'll show you the same story in native ES|QL using the `TS` command — 
+> Elasticsearch's purpose-built time series operator. No PromQL required."
+
+Paste and run — **checkout latency time series, split by flag state (Option A):**
+
+```esql
+TS metrics-*
+| WHERE `resource.attributes.service.name` == "checkout-service"
+| STATS
+    avg_ms = AVG(`metrics.checkout.latency_ms`),
+    p99_ms = PERCENTILE(`metrics.checkout.latency_ms`, 99)
+  BY ts = BUCKET(@timestamp, 1 minute),
+     flag = `attributes.feature_flag.realtime_fraud_detection`
+| SORT ts ASC
+```
+
+> "Two lines — flag off, flag on. The breakpoint is the exact moment I ran 
+> `trigger-incident`. Average latency went from under 10ms to over 800ms. P99 
+> climbed past 1.2 seconds. You can see the incident as a step-change in the 
+> time series — not inferred from logs, not reconstructed from traces, directly 
+> from the metric stream."
+
+Switch to Kibana Discover's **chart view** (icon top-right of results table) to render 
+the two lines. The visual breakpoint lands the story better than numbers.
+
+Paste and run — **request throughput rate using `RATE()` (Option B):**
+
+```esql
+TS metrics-*
+| WHERE `resource.attributes.service.name` == "checkout-service"
+| STATS checkout_rps = RATE(`metrics.checkout.request_count`)
+  BY ts = BUCKET(@timestamp, 1 minute)
+| SORT ts ASC
+```
+
+> "This one uses `RATE()` — a function that only exists in the `TS` context. 
+> It's for counters: it handles monotonic resets correctly, the way a counter 
+> that restarts after a deploy should be handled. You can't do this safely with 
+> `AVG` over a raw `FROM` query. Here it's showing successful checkout throughput 
+> collapsing as the FraudShield queue fills — the counter side of the same incident 
+> the latency chart just showed."
+
 ### 1.6 Kafka visibility (3 min)
 
 Navigate: **Discover** → ES|QL mode. Paste and run:
