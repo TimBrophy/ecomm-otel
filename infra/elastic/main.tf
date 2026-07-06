@@ -29,6 +29,6 @@ provider "elasticstack" {
   }
   kibana {
     endpoints = [var.kibana_endpoint]
-    api_key   = var.ec_api_key
+    api_key   = var.kibana_api_key != "" ? var.kibana_api_key : var.ec_api_key
   }
 }

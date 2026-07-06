@@ -3,6 +3,12 @@ variable "ec_api_key" {
   sensitive   = true
 }
 
+variable "kibana_api_key" {
+  description = "Project-level unrestricted API key for Kibana saved objects (ELASTIC_INGEST_API_KEY). Falls back to ec_api_key when not set (pass 1 bootstrap)."
+  sensitive   = true
+  default     = ""
+}
+
 variable "elastic_endpoint" {
   description = "Elasticsearch endpoint (populated from project output after first apply)"
   default     = ""

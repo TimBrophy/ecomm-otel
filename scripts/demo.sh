@@ -712,21 +712,23 @@ tf_apply() {
   echo "  Kibana:        ${KIBANA_ENDPOINT}"
   echo "  Ingest (mOTLP): ${INGEST_ENDPOINT}"
 
+  # ── Provision ingest API key (before pass 2 — Kibana resources need project key) ──
+  provision_ingest_key "${PROJECT_ID}"
+
+  # Reload .env so ELASTIC_INGEST_API_KEY is in scope for pass 2
+  set -a; source "${ROOT_DIR}/.env"; set +a
+
   # ── Pass 2: full elastic apply (Kibana resources) ──
+  # Uses ELASTIC_INGEST_API_KEY for Kibana auth — EC cloud key is rejected by Serverless Kibana.
   echo "→ Apply: infra/elastic (full)"
   (cd "${ROOT_DIR}/infra/elastic" && terraform apply -auto-approve \
     -var="ec_api_key=${EC_API_KEY}" \
     -var="elastic_endpoint=${ELASTIC_ENDPOINT}" \
     -var="kibana_endpoint=${KIBANA_ENDPOINT}" \
+    -var="kibana_api_key=${ELASTIC_INGEST_API_KEY}" \
     -var="product_team_kibana_endpoint=" \
     -var="product_team_es_endpoint=" \
     -var="product_team_api_key=")
-
-  # ── Provision ingest API key ──
-  provision_ingest_key "${PROJECT_ID}"
-
-  # Reload .env so new key values are in scope for docker compose
-  set -a; source "${ROOT_DIR}/.env"; set +a
 
   # ── Provision Elasticsearch resources ──
   provision_pipelines
