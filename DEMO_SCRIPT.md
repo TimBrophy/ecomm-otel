@@ -185,6 +185,26 @@ FROM traces-*
 > "The Metrics tab shows JVM internals — heap, GC pauses, thread counts — from the 
 > Java OTel agent. No code changes, no profiling agents to install."
 
+**Bonus — if your team already lives in PromQL:** switch back to **Discover** → ES|QL mode.
+
+> "Some of you already have a library of PromQL queries and Grafana dashboards. You don't 
+> have to throw those away — Elasticsearch speaks PromQL natively over the same OTel data, 
+> no separate Prometheus server to run."
+
+Paste and run — **checkout latency, grouped by the feature flag that's causing it:**
+
+```esql
+PROMQL index=metrics-generic.otel-default step=1s checkout_latency_ms=(avg by (attributes.feature_flag.realtime_fraud_detection) (metrics.checkout.latency_ms))
+| WHERE step > NOW() - 15 minutes
+| SORT step ASC
+```
+
+> "Two lines, split by the exact flag we just toggled. Flag off: 5–10ms, checkout is 
+> instant. Flag on: 800ms to over a second — the fraud check's own 400–900ms, plus 
+> queueing behind FraudShield's 3-connection pool limit stacking on top. Same underlying 
+> OTel metric data as everything else in this stack — just PromQL syntax, grouped by 
+> label, exactly like your Grafana dashboards do today."
+
 ### 1.6 Kafka visibility (3 min)
 
 Navigate: **Discover** → ES|QL mode. Paste and run:

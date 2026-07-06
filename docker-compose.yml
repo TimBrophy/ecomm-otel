@@ -5,6 +5,11 @@
 x-otel-env: &otel-env
   OTEL_EXPORTER_OTLP_ENDPOINT: http://collector:4317
   OTEL_EXPORTER_OTLP_PROTOCOL: grpc
+  # Default is 60000ms — far too coarse for live demo charts (looks like a
+  # staircase at any PromQL/ES|QL step finer than a minute). Collect at 1s
+  # so query-time PromQL step (e.g. 5s) can smooth/aggregate without
+  # redeploying to change the display granularity.
+  OTEL_METRIC_EXPORT_INTERVAL: "1000"
   # Exclude host/os detectors — they try to read /var/lib/dbus/machine-id which
   # doesn't exist in these containers and generates ENOENT noise in logs.
   # Java agents silently ignore this; it is a Node.js-only env var.
@@ -184,6 +189,7 @@ services:
       FLAG_SERVICE_URL: http://feature-flag-service:8090
       SCENARIO: steady   # or: degraded
       REQUESTS_PER_SECOND: "10"
+      CONCURRENCY: "5"
       PYTHONUNBUFFERED: "1"
     depends_on:
       - storefront

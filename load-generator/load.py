@@ -9,7 +9,8 @@ Environment:
   TARGET_URL          — api-gateway base URL (default http://api-gateway:8080)
   FLAG_SERVICE_URL    — feature-flag-service URL (default http://feature-flag-service:8090)
   SCENARIO            — steady | degraded (default steady)
-  REQUESTS_PER_SECOND — float, default 2.0
+  REQUESTS_PER_SECOND — float, default 2.0 (aggregate rate across all workers)
+  CONCURRENCY         — parallel worker threads, default 1 (matches prior sequential behaviour)
   DEGRADED_AFTER_SECONDS  — seconds before toggling flag on (default 60)
   RECOVER_AFTER_SECONDS   — seconds the flag stays on before reset (default 120)
 """
@@ -30,6 +31,7 @@ TARGET_URL = os.environ.get("TARGET_URL", "http://api-gateway:8080")
 FLAG_SERVICE_URL = os.environ.get("FLAG_SERVICE_URL", "http://feature-flag-service:8090")
 SCENARIO = os.environ.get("SCENARIO", "steady")
 RPS = float(os.environ.get("REQUESTS_PER_SECOND", "2.0"))
+CONCURRENCY = max(1, int(os.environ.get("CONCURRENCY", "1")))
 DEGRADED_AFTER = float(os.environ.get("DEGRADED_AFTER_SECONDS", "60"))
 RECOVER_AFTER = float(os.environ.get("RECOVER_AFTER_SECONDS", "120"))
 
@@ -90,20 +92,33 @@ def flag_controller():
     log.info("realtime_fraud_detection OFF — recovered")
 
 
-def main():
-    log.info("load-generator starting scenario=%s rps=%.1f target=%s", SCENARIO, RPS, TARGET_URL)
-
-    if SCENARIO == "degraded":
-        t = threading.Thread(target=flag_controller, daemon=True)
-        t.start()
-
-    interval = 1.0 / RPS
+def worker(interval):
     while True:
         start = time.time()
         do_checkout()
         elapsed = time.time() - start
         sleep_for = max(0, interval - elapsed)
         time.sleep(sleep_for)
+
+
+def main():
+    log.info("load-generator starting scenario=%s rps=%.1f concurrency=%d target=%s",
+              SCENARIO, RPS, CONCURRENCY, TARGET_URL)
+
+    if SCENARIO == "degraded":
+        t = threading.Thread(target=flag_controller, daemon=True)
+        t.start()
+
+    # Each worker aims for RPS/CONCURRENCY req/s so the aggregate stays ~RPS
+    # regardless of worker count. CONCURRENCY=1 reproduces the original
+    # strictly-sequential behaviour exactly.
+    interval = CONCURRENCY / RPS
+    workers = [threading.Thread(target=worker, args=(interval,), daemon=True)
+               for _ in range(CONCURRENCY)]
+    for t in workers:
+        t.start()
+    for t in workers:
+        t.join()
 
 
 if __name__ == "__main__":
