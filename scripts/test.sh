@@ -504,6 +504,23 @@ print(rows[0][0] if rows else 0)" 2>/dev/null || echo "0")
   fi
 fi
 
+# ── UC3 — Team alert ──────────────────────────────────────────────────────────
+section "UC3 — Team alert: FraudShield rule in product-team space"
+
+if [[ -z "${KIBANA_URL:-}" || -z "${ELASTIC_INGEST_API_KEY:-}" ]]; then
+  skip "KIBANA_URL or ELASTIC_INGEST_API_KEY not set"
+else
+  RULE_COUNT=$(curl -sf \
+    "${KIBANA_URL}/s/product-team/api/alerting/rules/_find?search=FraudShield&search_fields=name" \
+    -H "Authorization: ApiKey ${ELASTIC_INGEST_API_KEY}" 2>/dev/null | \
+    python3 -c "import json,sys; d=json.load(sys.stdin); print(d.get('total',0))" 2>/dev/null || echo "0")
+  if [[ "${RULE_COUNT}" -ge 1 ]]; then
+    pass "FraudShield alert rule exists in product-team space (${RULE_COUNT} rule(s))"
+  else
+    fail "FraudShield alert rule not found in product-team space — run ./scripts/demo.sh provision-team"
+  fi
+fi
+
 # ── Universal Profiling: stateful ESS deployment ──────────────────────────────
 
 section "Universal Profiling: stateful ESS deployment"

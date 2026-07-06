@@ -392,6 +392,21 @@ provision_team() {
     fi
   done
 
+  # alerts layer — Python scripts in teams/${TEAM}/alerts/
+  local ALERT_DIR="${ROOT_DIR}/teams/${TEAM}/alerts"
+  if [[ -d "${ALERT_DIR}" ]]; then
+    for PY_FILE in "${ALERT_DIR}"/*.py; do
+      [[ -f "${PY_FILE}" ]] || continue
+      PY_NAME=$(basename "${PY_FILE}" .py)
+      if KIBANA_URL="${KIBANA_URL}" ELASTIC_INGEST_API_KEY="${ELASTIC_INGEST_API_KEY}" \
+          python3 "${PY_FILE}" 2>&1; then
+        COUNT=$((COUNT + 1))
+      else
+        echo "  ✗ ${PY_NAME} (alert provisioning failed)"
+      fi
+    done
+  fi
+
   [[ "${COUNT}" -eq 0 ]] && echo "  (no dashboards to provision)"
   rm -f /tmp/dash_resp.json
   echo "  View at: ${KIBANA_URL}/s/${SPACE_ID}/app/dashboards"
@@ -1964,6 +1979,18 @@ trigger_incident() {
     echo "  → Autonomous SRE investigation starting in the background"
     echo "    (log: ${ROOT_DIR}/.autonomous-sre.log)"
     ( _run_autonomous_investigation >> "${ROOT_DIR}/.autonomous-sre.log" 2>&1 & disown )
+  fi
+
+  # Post a deployment annotation to APM so the incident correlates to a "deploy event" on the timeline
+  if [[ -n "${KIBANA_URL:-}" && -n "${ELASTIC_INGEST_API_KEY:-}" ]]; then
+    local ANNO_TS
+    ANNO_TS=$(date -u +"%Y-%m-%dT%H:%M:%S.000Z")
+    curl -s -o /dev/null -X POST "${KIBANA_URL}/api/apm/services/checkout-service/annotation" \
+      -H "Authorization: ApiKey ${ELASTIC_INGEST_API_KEY}" \
+      -H "Content-Type: application/json" \
+      -H "kbn-xsrf: true" \
+      -d "{\"@timestamp\": \"${ANNO_TS}\", \"service\": {\"version\": \"2.4.1\"}, \"message\": \"Deploy: realtime_fraud_detection=true (PR #47 — FraudShield integration)\"}" \
+      && echo "  → Deployment annotation posted to APM (checkout-service v2.4.1)"
   fi
 }
 

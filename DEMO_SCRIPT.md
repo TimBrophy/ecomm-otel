@@ -35,6 +35,10 @@ docker compose ps
 #   - Dev Tools (for ES|QL)
 #   - Kibana > Observability > Cases
 #   - Kibana > Agent Builder > Conversations
+
+# 7. Enable APM anomaly detection (one-time, needed for health badge colours on service map):
+#    APM > Settings > Anomaly detection → "Create jobs" → select all services → Save
+#    (ML Jobs API is restricted in Serverless — UI-only. Do this before the demo starts.)
 ```
 
 **If collector shows 403:** `./scripts/demo.sh refresh-key` — takes ~60s.
@@ -77,6 +81,8 @@ Run in terminal (keep it visible — it's a good demo moment):
 > last sprint as a compliance requirement — synchronous fraud checking on every checkout. 
 > It looked fine in staging. Let's see what it does under load."
 
+> (This also posts a **deployment annotation** to APM — you'll see a deploy marker on the checkout-service latency chart in a moment.)
+
 The incident stays active until you run `./scripts/demo.sh reset`. Move on — let latency build.
 
 ### 1.3 Show the service map (3 min)
@@ -107,6 +113,14 @@ Click a high-latency trace. Show the waterfall.
 > "Here's the full distributed trace — from the API gateway span all the way through 
 > checkout, into order-service, and across Kafka to the notification consumer. 
 > One view, zero context switching."
+
+Before drilling into the trace, navigate to: **APM > Services > checkout-service > Overview**
+
+> "Before we click into spans — notice the deployment marker on the latency chart. 
+> That vertical line is the exact moment I ran trigger-incident. 
+> This is a GitHub-style deployment annotation: version 2.4.1, PR #47 — FraudShield integration. 
+> It's posted automatically when the flag flips. Your on-call engineer sees the correlation 
+> between the deploy and the latency spike without any manual annotation."
 
 Point out:
 - A new child span `fraud_check` appearing at the end of every checkout span — this is the smoking gun
@@ -185,6 +199,22 @@ FROM traces-*
 ```
 
 > "Blast radius — which services have elevated error rates right now."
+
+Paste and run — **error logs during the incident (logs, not traces):**
+
+```esql
+FROM logs-*
+| WHERE @timestamp > NOW() - 15 minutes
+| WHERE `service.name` == "checkout-service"
+| WHERE `log.level` IN ("ERROR", "WARN")
+| KEEP @timestamp, `service.name`, `log.level`, message
+| SORT @timestamp DESC
+| LIMIT 20
+```
+
+> "Same query language, now over logs. This is the ES|QL story for your on-call team: 
+> one language, same syntax, whether you're querying traces, logs, or metrics. 
+> No PromQL for metrics, no Lucene for logs — just ES|QL for everything."
 
 **Latency distribution** — navigate to: **APM > Services > checkout-service > Metrics**
 
@@ -497,6 +527,12 @@ the **Checkout Funnel** overview and the **Checkout Business Overview** live dat
 > GitOps pipeline. The platform layer is untouched — the space, role, and SLOs 
 > the platform team provisioned are exactly as they were."
 
+> "There's also a team-defined alert rule that shipped with the same command — 
+> 'FraudShield Checkout Timeout Rate'. It fires when fraud check timeouts exceed 3 
+> in a 5-minute window. The platform team doesn't know about it; the checkout team 
+> owns it entirely. Platform governs the SLOs and the escalation path — 
+> the team governs their own leading indicators."
+
 Switch the Kibana space switcher between default and product-team to show the isolation.
 
 ### 3.6 Sampling and collector config (2 min)
@@ -598,6 +634,25 @@ curl -s "${KIBANA_URL}/api/observability/slos?size=100" \
 > What we do instead: your configs are in Git-managed JSON that's already version 
 > controlled, API-accessible, and in formats documented in open specs. 
 > The migration story is code, not screenshots."
+
+**Show it live — bulk export via snapshot API:**
+
+```bash
+source .env
+# Register a read-only snapshot repository (S3 example — you already have the bucket)
+curl -s -X PUT "${ELASTICSEARCH_URL}/_snapshot/ecomm-backup" \
+  -H "Authorization: ApiKey ${ELASTIC_INGEST_API_KEY}" \
+  -H "Content-Type: application/json" \
+  -d '{"type":"url","settings":{"url":"https://s3.amazonaws.com/your-bucket"}}'
+
+# Or just show the API call structure — the point is that the same open data is portable:
+curl -s "${ELASTICSEARCH_URL}/traces-generic.otel-default/_count" \
+  -H "Authorization: ApiKey ${ELASTIC_INGEST_API_KEY}" | python3 -m json.tool
+```
+
+> "That count query runs against the live OTel data. The snapshot API works 
+> the same way — point it at an S3 bucket and everything ships in Lucene segment format. 
+> Readable by any Elasticsearch-compatible system. The data format is not ours to lock."
 
 ### 4.5 Scale and cost model (2 min)
 
