@@ -339,7 +339,7 @@ print(json.dumps({'linked': {'projects': {'${ELASTIC_PROJECT_ID}': {'type': 'obs
   echo "✓ Product team project ready"
   echo "  Platform Kibana:     ${KIBANA_URL}"
   echo "  Product team Kibana: ${PT_KIBANA_URL}"
-  echo "  CPS alias: FROM platform:traces-generic.otel-default | ..."
+  echo "  CPS query: FROM traces-generic.otel-default | ...  (no prefix — merges transparently via Kibana)"
 }
 
 # ── Team layer provisioning (legacy — main Kibana space) ─────────────────────
@@ -784,7 +784,7 @@ try: channels = json.loads(sys.argv[4]) if len(sys.argv) > 4 else []
 except: channels = []
 if slack_id and channels:
     def mk(g, t): return {'id': slack_id, 'group': g, 'params': {'channelIds': channels, 'text': t}, 'frequency': {'summary': False, 'notify_when': 'onActionGroupChange', 'throttle': None}}
-    rule['actions'] = [mk('slo.burnRate.critical', ':rotating_light: *{{rule.name}}* — critical burn rate'), mk('slo.burnRate.high', ':warning: *{{rule.name}}* — high burn rate'), mk('recovered', ':white_check_mark: *{{rule.name}}* — burn rate recovered')]
+    rule['actions'] = [mk('slo.burnRate.alert', ':rotating_light: *{{rule.name}}* — critical burn rate'), mk('slo.burnRate.high', ':warning: *{{rule.name}}* — high burn rate'), mk('recovered', ':white_check_mark: *{{rule.name}}* — burn rate recovered')]
 print(json.dumps(rule))
 " "${ALERT_FILE}" "${SLO_ID}" "${SLACK_CONNECTOR_ID}" "${SLACK_CHANNEL_IDS}")
     else
@@ -998,6 +998,36 @@ tf_apply() {
 _destroy_elastic() {
   echo "→ Stopping local Docker stack"
   (cd "${ROOT_DIR}" && docker compose --profile load --profile rum down)
+
+  # ── Remove Cross-Project Search link before destroying the platform project ──
+  #
+  # The EC API blocks deletion of a project that is still linked as a CPS source.
+  # Terraform destroy provisioners are unreliable for this on macOS (head -n -1
+  # incompatibility) and the provisioner output is suppressed for sensitive vars.
+  # We do it explicitly here with full visibility, before terraform destroy runs.
+  local PT_PROJECT_ID
+  PT_PROJECT_ID=$(cd "${ROOT_DIR}/infra/elastic" && terraform output -raw product_team_project_id 2>/dev/null || echo "")
+
+  if [[ -n "${PT_PROJECT_ID}" ]]; then
+    echo "→ Removing CPS link from product team project ${PT_PROJECT_ID}..."
+    local CPS_UNLINK_HTTP CPS_UNLINK_BODY
+    CPS_UNLINK_BODY='{"linked":{"projects":{}}}'
+    CPS_UNLINK_HTTP=$(curl -s -o /tmp/cps_unlink_resp.json -w "%{http_code}" -X PATCH \
+      "https://api.elastic-cloud.com/api/v1/serverless/projects/observability/${PT_PROJECT_ID}" \
+      -H "Authorization: ApiKey ${EC_API_KEY}" \
+      -H "Content-Type: application/json" \
+      -d "${CPS_UNLINK_BODY}")
+
+    if [[ "${CPS_UNLINK_HTTP}" =~ ^2 ]] || [[ "${CPS_UNLINK_HTTP}" == "404" ]]; then
+      echo "  ✓ CPS unlink complete (HTTP ${CPS_UNLINK_HTTP})"
+    else
+      echo "  ✗ CPS unlink failed (HTTP ${CPS_UNLINK_HTTP})"
+      cat /tmp/cps_unlink_resp.json 2>/dev/null && echo
+      echo "  Continuing teardown — you may need to unlink manually before the platform project can be deleted."
+    fi
+  else
+    echo "  (no product team project found in terraform state — skipping CPS unlink)"
+  fi
 
   echo "→ Destroying Elastic Cloud project"
   # Drop the product team dashboard from state before destroy — the provider
