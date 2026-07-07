@@ -23,6 +23,18 @@ app.get('/api/products', async (req, res) => {
   }
 });
 
+app.get('/api/checkout/validate', async (req, res) => {
+  try {
+    const { data } = await axios.get(`${CHECKOUT_SERVICE_URL}/checkout/validate`, {
+      headers: propagate(req),
+    });
+    res.json(data);
+  } catch (err) {
+    const status = err.response?.status || 502;
+    res.status(status).json({ error: 'checkout validation failed', detail: err.message });
+  }
+});
+
 app.post('/api/checkout', async (req, res) => {
   try {
     const { data } = await axios.post(`${CHECKOUT_SERVICE_URL}/checkout`, req.body, {

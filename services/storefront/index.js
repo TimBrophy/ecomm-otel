@@ -120,8 +120,22 @@ ${navBar()}
 </html>`);
 });
 
-app.get('/checkout', (req, res) => {
+app.get('/checkout', async (req, res) => {
   const productId = req.query.productId || '';
+
+  // Pre-flight: validate checkout readiness via api-gateway → checkout-service.
+  // When realtime_fraud_detection is active the call blocks 200–500 ms while
+  // checkout-service pings FraudShield, making TTFB (and therefore LCP) degrade
+  // in the browser. The distributed trace links this page load to the root cause.
+  const preflightStart = Date.now();
+  try {
+    await axios.get(`${API_GATEWAY_URL}/api/checkout/validate`);
+  } catch (_) {
+    // Non-fatal — page renders even if validation is unreachable
+  }
+  const preflightMs = Date.now() - preflightStart;
+  res.setHeader('Server-Timing', `checkout-validate;dur=${preflightMs}`);
+
   res.send(`${pageHead('Checkout')}
 <body>
 ${navBar()}
@@ -202,6 +216,7 @@ app.get('/api/products', async (req, res) => {
 });
 
 app.post('/api/checkout', async (req, res) => {
+  const start = Date.now();
   try {
     const response = await axios.post(`${API_GATEWAY_URL}/api/checkout`, req.body, {
       headers: {
@@ -209,8 +224,10 @@ app.post('/api/checkout', async (req, res) => {
         'x-forwarded-for': req.ip,
       },
     });
+    res.setHeader('Server-Timing', `checkout-api;dur=${Date.now() - start}`);
     res.status(response.status).json(response.data);
   } catch (err) {
+    res.setHeader('Server-Timing', `checkout-api;dur=${Date.now() - start}`);
     const status = err.response ? err.response.status : 502;
     const data = err.response ? err.response.data : { error: 'upstream unavailable' };
     res.status(status).json(data);

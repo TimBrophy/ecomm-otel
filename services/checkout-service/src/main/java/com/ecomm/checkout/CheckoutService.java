@@ -194,6 +194,57 @@ public class CheckoutService {
     }
 
     // -------------------------------------------------------------------------
+    // Preflight readiness check — called by storefront SSR on checkout page load
+    // -------------------------------------------------------------------------
+
+    /**
+     * Lightweight FraudShield connectivity probe used by GET /checkout/validate.
+     *
+     * Runs without acquiring the connection-pool Semaphore so it doesn't compete
+     * with live checkouts. When fraud detection is off it returns immediately.
+     * When active it adds 200–500 ms to mirror real external-API latency and
+     * emits a fraud_check.preflight span so the trace waterfall shows exactly
+     * which child span is eating the storefront TTFB budget.
+     */
+    public Map<String, Object> validateReadiness() {
+        boolean fraudActive = fraudDetectionEnabled;
+        long validationMs = 0;
+        String fraudCheckResult = "skipped";
+
+        if (fraudActive) {
+            Tracer tracer = GlobalOpenTelemetry.getTracer("checkout-service");
+            Span preflight = tracer.spanBuilder("fraud_check.preflight")
+                    .setSpanKind(SpanKind.CLIENT)
+                    .startSpan();
+            try (Scope scope = preflight.makeCurrent()) {
+                preflight.setAttribute("fraud_check.provider", "FraudShield");
+                preflight.setAttribute("fraud_check.type", "preflight");
+                preflight.setAttribute("peer.service", "fraud-shield-api");
+                preflight.setAttribute("server.address", "api.fraudshield.io");
+
+                int delayMs = 200 + random.nextInt(300);
+                preflight.setAttribute("fraud_check.duration_ms", delayMs);
+                Thread.sleep(delayMs);
+                validationMs = delayMs;
+                fraudCheckResult = "ready";
+                preflight.setAttribute("fraud_check.result", "ready");
+            } catch (InterruptedException ie) {
+                Thread.currentThread().interrupt();
+                fraudCheckResult = "interrupted";
+            } finally {
+                preflight.end();
+            }
+        }
+
+        return Map.of(
+                "ready", true,
+                "fraud_detection_active", fraudActive,
+                "fraud_check_result", fraudCheckResult,
+                "validation_ms", validationMs
+        );
+    }
+
+    // -------------------------------------------------------------------------
     // Fraud check simulation — creates a visible child span in the trace
     // -------------------------------------------------------------------------
 

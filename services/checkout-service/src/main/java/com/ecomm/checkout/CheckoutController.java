@@ -32,6 +32,21 @@ public class CheckoutController {
     }
 
     /**
+     * GET /checkout/validate
+     *
+     * Pre-flight readiness check called by the storefront SSR before rendering the
+     * checkout page. When realtime_fraud_detection is active this runs a lightweight
+     * FraudShield connectivity probe (200–500 ms), making TTFB — and therefore
+     * browser LCP — degrade in lockstep with checkout-service health. The resulting
+     * fraud_check.preflight span appears in the same distributed trace as the page
+     * load, giving investigators a single waterfall from browser to root cause.
+     */
+    @GetMapping("/checkout/validate")
+    public ResponseEntity<Map<String, Object>> validate() {
+        return ResponseEntity.ok(checkoutService.validateReadiness());
+    }
+
+    /**
      * GET /health
      *
      * Lightweight liveness probe used by Docker Compose / load balancers.
