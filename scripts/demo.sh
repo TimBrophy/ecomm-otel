@@ -909,7 +909,10 @@ tf_init() {
 tf_plan() {
   echo "→ Plan: infra/elastic"
   (cd "${ROOT_DIR}/infra/elastic" && terraform plan \
-    -var="ec_api_key=${EC_API_KEY}")
+    -var="ec_api_key=${EC_API_KEY}" \
+    -var="product_team_kibana_endpoint=" \
+    -var="product_team_es_endpoint=" \
+    -var="product_team_api_key=")
 }
 
 tf_apply() {
@@ -2003,6 +2006,18 @@ reset_demo() {
 
   # Clear profiling slow mode
   _ssm_run "rm -f /tmp/fraud_check_slow && echo profiling slow mode cleared"
+
+  # Post a "resolved" annotation so the timeline shows the rollback
+  if [[ -n "${KIBANA_URL:-}" && -n "${ELASTIC_INGEST_API_KEY:-}" ]]; then
+    local ANNO_TS
+    ANNO_TS=$(date -u +"%Y-%m-%dT%H:%M:%S.000Z")
+    curl -s -o /dev/null -X POST "${KIBANA_URL}/api/apm/services/checkout-service/annotation" \
+      -H "Authorization: ApiKey ${ELASTIC_INGEST_API_KEY}" \
+      -H "Content-Type: application/json" \
+      -H "kbn-xsrf: true" \
+      -d "{\"@timestamp\": \"${ANNO_TS}\", \"service\": {\"version\": \"2.4.0\"}, \"message\": \"Rollback: realtime_fraud_detection=false (incident resolved)\"}" \
+      && echo "  → Rollback annotation posted to APM (checkout-service v2.4.0)"
+  fi
 
   echo "✓ Demo reset complete"
 }

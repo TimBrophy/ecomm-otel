@@ -71,11 +71,12 @@ def main():
                     "| WHERE `resource.attributes.service.name` == \"checkout-service\" "
                     "| WHERE name == \"fraud_check\" "
                     "| WHERE `attributes.fraud_check.result` == \"timeout\" "
-                    "| STATS timeout_count = COUNT(*)"
+                    "| STATS timeout_count = COUNT(*) "
+                    "| WHERE timeout_count > 3"
                 )
             },
             "timeField": "@timestamp",
-            "threshold": [3],
+            "threshold": [0],
             "thresholdComparator": ">",
             "timeWindowSize": 5,
             "timeWindowUnit": "m",
