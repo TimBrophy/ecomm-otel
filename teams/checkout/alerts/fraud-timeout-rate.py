@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
-Deploy the FraudShield Timeout Rate alert rule to the product-team Kibana space.
+Deploy the FraudShield Timeout Rate alert rule to the product-team Kibana project.
 
 Rule: fires when fraud_check spans with result=timeout exceed 3 in a 5-minute window.
-Space: product-team (scoped to checkout team's space, not the platform space).
+Project: product-team (the checkout team's own Kibana project, not the platform project).
 Rule type: .es-query with ES|QL search type.
 """
 import json
@@ -16,7 +16,6 @@ KIBANA_URL = os.environ.get("KIBANA_URL", "").rstrip("/")
 API_KEY = os.environ.get("ELASTIC_INGEST_API_KEY", "")
 
 RULE_NAME = "FraudShield — Checkout Timeout Rate"
-SPACE_ID = "product-team"
 
 
 def auth_header():
@@ -44,7 +43,7 @@ def main():
         sys.exit(1)
 
     # Check if the rule already exists
-    find_path = f"/s/{SPACE_ID}/api/alerting/rules/_find?search=FraudShield&search_fields=name"
+    find_path = f"/api/alerting/rules/_find?search=FraudShield&search_fields=name"
     try:
         result = api_request("GET", find_path)
         if result.get("total", 0) >= 1:
@@ -86,7 +85,7 @@ def main():
     }
 
     try:
-        api_request("POST", f"/s/{SPACE_ID}/api/alerting/rule", rule_payload)
+        api_request("POST", f"/api/alerting/rule", rule_payload)
         print(f"  ✓ {RULE_NAME} (alert rule created)")
     except urllib.error.HTTPError as e:
         body_resp = e.read().decode()

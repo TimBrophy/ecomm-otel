@@ -30,7 +30,7 @@ docker compose ps
 #   - Kibana > Observability > APM > Services
 #   - Kibana > Observability > SLOs
 #   - Kibana > Observability > Infrastructure > Hosts
-#   - Kibana > Spaces > product-team > Dashboards > "Checkout Business Overview"
+#   - Product team Kibana (${PRODUCT_TEAM_KIBANA_URL}) > Dashboards > "Checkout Business Overview"
 #   - Kibana > Discover (metrics-* data view)
 #   - Dev Tools (for ES|QL)
 #   - Kibana > Observability > Cases
@@ -436,7 +436,7 @@ Navigate: **APM > Service Map**
 
 ### 2.4 Business view (5 min)
 
-Navigate: **Kibana > Spaces > product-team > Dashboards > Checkout Business Overview**
+Navigate: **Product team Kibana** (`${PRODUCT_TEAM_KIBANA_URL}`) **> Dashboards > Checkout Business Overview**
 
 > "This is the business stakeholder view — deployed as code from our Git repo. 
 > Four KPI tiles across the top: total checkouts, average checkout time in milliseconds, 
@@ -489,10 +489,8 @@ Share your terminal or editor:
 
 ```
 platform/                  ← central platform team owns this
-├── spaces/
-│   └── product-team.json  ← which Kibana spaces exist
-├── rbac/
-│   └── product-team-viewer.json  ← who can see what
+├── ingest-pipelines/
+│   └── pii-masking.json   ← PII redaction before storage
 ├── slos/
 │   ├── checkout-latency.json
 │   ├── checkout-errors.json
@@ -508,8 +506,8 @@ teams/
         └── business-overview.py     ← live Lens dashboard (8 panels + KPIs)
 ```
 
-> "Two layers. The platform team controls access topology — which spaces exist, 
-> who can see what data, what SLOs are enforced. The checkout team controls their 
+> "Two layers. The platform team controls access topology — which projects exist, 
+> what data flows where, what SLOs are enforced. The checkout team controls their 
 > content — dashboards, saved views — without ever touching the platform layer."
 
 ### 3.3 Platform layer: show the SLO as code (2 min)
@@ -520,34 +518,31 @@ Open `platform/slos/checkout-latency.json`:
 > If someone deletes it in Kibana, the next deploy restores it. 
 > If someone edits the target in Kibana, the next deploy corrects it back."
 
-### 3.4 Platform layer: spaces and RBAC as code (3 min)
+### 3.4 Platform layer: project isolation as code (3 min)
 
-Open `platform/spaces/product-team.json`:
+Navigate: **Dev Tools** or open `infra/elastic/main.tf` in editor.
 
-> "The platform team defines which Kibana spaces exist. The checkout team gets 
-> a space — but they didn't create it and they can't remove it. 
-> That's a platform decision, not a team decision."
+> "Separation between the platform team and the product team isn't a Kibana space — 
+> it's a separate Elasticsearch project, provisioned by Terraform. 
+> The product team has their own Kibana, their own data access, their own API keys. 
+> They can read platform data through Cross-Project Search, 
+> but they cannot modify platform dashboards, SLOs, or alerts. 
+> That isolation is enforced at the infrastructure level, not by a role assignment."
 
-Open `platform/rbac/product-team-viewer.json`:
+Point to the `ec_observability_project.product_team` resource in `infra/elastic/main.tf`:
 
-> "And here's what that team can see: read access to traces, logs, and metrics. 
-> Dashboard and Discover access in their space only. Defined in code, reviewed in Git, 
-> deployed centrally. No ClickOps, no 'can you give me access to X' tickets."
+> "One Terraform resource. The platform team defines it, reviews it in Git, 
+> and provisions it with a single apply. The product team doesn't manage it — 
+> they consume it. That's platform governance."
 
-Deploy both live:
-
-```bash
-./scripts/demo.sh provision-spaces
-./scripts/demo.sh provision-rbac
-```
-
-> "Idempotent. If the space already exists, it's updated in place. 
-> If a role drifts, it's corrected. In CI this runs on every merge to main."
+> "Cross-Project Search is what lets the product team dashboard query the platform's 
+> trace data without copying it. Same data, different access boundary. 
+> No duplication, no stale copies."
 
 ### 3.5 Team layer: push the dashboard as code (5 min)
 
-> "Now I'm the checkout team. The platform team gave me a space and a role. 
-> I own what goes into that space."
+> "Now I'm the checkout team. The platform team provisioned my project. 
+> I own what goes into it."
 
 Open `teams/checkout/dashboards/checkout-funnel.ndjson` in editor:
 
@@ -562,18 +557,18 @@ Run live in terminal:
 
 Expected output:
 ```
-→ Provisioning team layer: checkout → space: product-team
+→ Provisioning team layer: checkout → project: product-team
   ✓ checkout-funnel (2 object(s))
   ✓ Checkout Business Overview (9 object(s))
-    https://<your-kibana>/s/product-team/app/dashboards#/view/checkout-business-overview
+    https://<product-team-kibana>/app/dashboards#/view/checkout-business-overview
 ```
 
-Navigate to the URL it prints. Show both dashboards in the `product-team` space — 
+Navigate to the URL it prints. Show both dashboards in the product team Kibana project — 
 the **Checkout Funnel** overview and the **Checkout Business Overview** live data dashboard.
 
 > "Two dashboards, two files, one command. The checkout team shipped both through the same 
-> GitOps pipeline. The platform layer is untouched — the space, role, and SLOs 
-> the platform team provisioned are exactly as they were."
+> GitOps pipeline. The platform layer is untouched — the project configuration, SLOs, 
+> and alerts the platform team provisioned are exactly as they were."
 
 > "There's also a team-defined alert rule that shipped with the same command — 
 > 'FraudShield Checkout Timeout Rate'. It fires when fraud check timeouts exceed 3 
@@ -581,7 +576,7 @@ the **Checkout Funnel** overview and the **Checkout Business Overview** live dat
 > owns it entirely. Platform governs the SLOs and the escalation path — 
 > the team governs their own leading indicators."
 
-Switch the Kibana space switcher between default and product-team to show the isolation.
+Switch browser tabs between the platform Kibana and the product team Kibana to show the project-level isolation.
 
 ### 3.6 Sampling and collector config (2 min)
 
@@ -595,7 +590,7 @@ Show `collector/otel-collector.yaml` briefly — point out the pipeline structur
 > "The collector pipeline is code. The Fleet agent policy — which governs host metrics 
 > collection on the collector host — is also code, provisioned by the same deploy script. 
 > Every layer of the observability stack: collector config, agent policies, 
-> Kibana spaces, roles, SLOs, dashboards. Nothing lives only in a UI."
+> project provisioning, SLOs, dashboards. Nothing lives only in a UI."
 
 ---
 

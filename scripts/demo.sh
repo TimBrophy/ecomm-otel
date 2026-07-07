@@ -40,10 +40,8 @@ Granular commands:
   provision-workflows       (Re-)deploy incident-response workflows from platform/workflows/
   provision-alerts    (Re-)deploy Kibana alert rules from platform/alerts/
   provision-ingest-pipelines  (Re-)deploy ES ingest pipelines from platform/ingest-pipelines/ and set as default_pipeline on traces index
-  provision-spaces    (Re-)deploy Kibana spaces from platform/spaces/
-  provision-rbac      (Re-)deploy Kibana roles from platform/rbac/
   provision-product-team  Create product team project, configure CPS, deploy dashboards
-  provision-team      Push team layer to main Kibana product-team space (legacy)
+  provision-team      Deploy team content to product-team Kibana project
   provision-ml        Print ML anomaly detection job reference configs (UI-only in Serverless)
   trigger-incident    Enable realtime_fraud_detection flag (cascading latency + errors)
   reset               Reset demo flags to clean baseline
@@ -155,8 +153,9 @@ provision_pipelines() {
 # Re-running apply is idempotent: existing SLOs with the same name are skipped.
 
 # ── Spaces provisioning ───────────────────────────────────────────────────────
-# Space definitions live in platform/spaces/*.json.
-# PUT /api/spaces/space/{id} is a true upsert — idempotent.
+# DEPRECATED — Kibana Spaces are no longer used. Separation is at the project level
+# (two Serverless projects: platform + product-team). These functions are kept for
+# reference only and are not called by any active workflow.
 
 provision_spaces() {
   echo "→ Provisioning Kibana spaces"
@@ -199,8 +198,9 @@ provision_spaces() {
 }
 
 # ── RBAC provisioning ─────────────────────────────────────────────────────────
-# Role definitions live in platform/rbac/*.json.
-# Role name is derived from filename. PUT /api/security/role/{name} is a upsert.
+# DEPRECATED — Kibana Spaces are no longer used. Separation is at the project level
+# (two Serverless projects: platform + product-team). These functions are kept for
+# reference only and are not called by any active workflow.
 
 provision_rbac() {
   echo "→ Provisioning Kibana roles"
@@ -346,17 +346,21 @@ print(json.dumps({'linked': {'projects': {'${ELASTIC_PROJECT_ID}': {'type': 'obs
   echo "  CPS query: FROM traces-generic.otel-default | ...  (no prefix — merges transparently via Kibana)"
 }
 
-# ── Team layer provisioning (legacy — main Kibana space) ─────────────────────
-# Kept for backward compatibility. New deployments use provision_product_team.
+# ── Team layer provisioning ───────────────────────────────────────────────────
+# Deploys team dashboards and alert rules to the product team's own Kibana project.
 
 provision_team() {
   local TEAM="${1:-checkout}"
-  local SPACE_ID="${2:-product-team}"
-  echo "→ Provisioning team layer: ${TEAM} → space: ${SPACE_ID}"
+  echo "→ Provisioning team layer: ${TEAM} → project: product-team"
+
+  if [[ -z "${PRODUCT_TEAM_KIBANA_URL:-}" ]]; then
+    echo "  ✗ PRODUCT_TEAM_KIBANA_URL not set — run ./scripts/demo.sh provision-product-team first"
+    return 1
+  fi
 
   local DASH_DIR="${ROOT_DIR}/teams/${TEAM}/dashboards"
-  local KIBANA="${KIBANA_URL}"
-  local AUTH="Authorization: ApiKey ${ELASTIC_INGEST_API_KEY}"
+  local KIBANA="${PRODUCT_TEAM_KIBANA_URL}"
+  local AUTH="Authorization: ApiKey ${PRODUCT_TEAM_API_KEY:-${ELASTIC_INGEST_API_KEY}}"
   local COUNT=0
 
   for DASH_FILE in "${DASH_DIR}"/*.ndjson; do
@@ -366,7 +370,7 @@ provision_team() {
 
     local HTTP_CODE SUCCESS ERRORS
     HTTP_CODE=$(curl -s -o /tmp/dash_resp.json -w "%{http_code}" -X POST \
-      "${KIBANA}/s/${SPACE_ID}/api/saved_objects/_import?overwrite=true" \
+      "${KIBANA}/api/saved_objects/_import?overwrite=true" \
       -H "${AUTH}" -H "kbn-xsrf: true" \
       -F "file=@${DASH_FILE};type=application/ndjson")
 
@@ -385,8 +389,9 @@ provision_team() {
   for PY_FILE in "${DASH_DIR}"/*.py; do
     [[ -f "${PY_FILE}" ]] || continue
     PY_NAME=$(basename "${PY_FILE}" .py)
-    if KIBANA_URL="${KIBANA_URL}" ELASTIC_INGEST_API_KEY="${ELASTIC_INGEST_API_KEY}" \
-        python3 "${PY_FILE}" 2>&1; then
+    if KIBANA_URL="${PRODUCT_TEAM_KIBANA_URL}" \
+       ELASTIC_INGEST_API_KEY="${PRODUCT_TEAM_API_KEY:-${ELASTIC_INGEST_API_KEY}}" \
+       python3 "${PY_FILE}" 2>&1; then
       COUNT=$((COUNT + 1))
     else
       echo "  ✗ ${PY_NAME} failed"
@@ -399,8 +404,9 @@ provision_team() {
     for PY_FILE in "${ALERT_DIR}"/*.py; do
       [[ -f "${PY_FILE}" ]] || continue
       PY_NAME=$(basename "${PY_FILE}" .py)
-      if KIBANA_URL="${KIBANA_URL}" ELASTIC_INGEST_API_KEY="${ELASTIC_INGEST_API_KEY}" \
-          python3 "${PY_FILE}" 2>&1; then
+      if KIBANA_URL="${PRODUCT_TEAM_KIBANA_URL}" \
+         ELASTIC_INGEST_API_KEY="${PRODUCT_TEAM_API_KEY:-${ELASTIC_INGEST_API_KEY}}" \
+         python3 "${PY_FILE}" 2>&1; then
         COUNT=$((COUNT + 1))
       else
         echo "  ✗ ${PY_NAME} (alert provisioning failed)"
@@ -408,9 +414,9 @@ provision_team() {
     done
   fi
 
-  [[ "${COUNT}" -eq 0 ]] && echo "  (no dashboards to provision)"
+  [[ "${COUNT}" -eq 0 ]] && echo "  (no content to provision)"
   rm -f /tmp/dash_resp.json
-  echo "  View at: ${KIBANA_URL}/s/${SPACE_ID}/app/dashboards"
+  echo "  View at: ${PRODUCT_TEAM_KIBANA_URL}/app/dashboards"
 }
 
 # ── Slack connector provisioning ─────────────────────────────────────────────
@@ -949,10 +955,6 @@ tf_apply() {
 
   # ── Provision Elasticsearch resources ──
   provision_pipelines
-
-  # ── Provision Kibana spaces and RBAC for platform space (no product-team space — it has its own project) ──
-  provision_spaces
-  provision_rbac
 
   # ── Pre-flight: verify required vars before starting containers ──
   echo "→ Pre-flight check..."
@@ -2070,10 +2072,8 @@ case "${1:-}" in
   provision-knowledge-base)  provision_knowledge_base ;;
   provision-agent-builder)   provision_agent_builder ;;
   provision-workflows)       provision_workflows ;;
-  provision-spaces)          provision_spaces ;;
-  provision-rbac)            provision_rbac ;;
   provision-product-team)    provision_product_team ;;
-  provision-team)            provision_team "checkout" "product-team" ;;
+  provision-team)            provision_team "checkout" ;;
   provision-profiling-deployment) provision_profiling_deployment ;;
   provision-ingest-pipelines) provision_ingest_pipelines ;;
   refresh-key)
