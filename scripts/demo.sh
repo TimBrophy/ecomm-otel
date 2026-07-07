@@ -39,6 +39,7 @@ Granular commands:
   provision-agent-builder   (Re-)deploy Agent Builder tools + autonomous-SRE agent
   provision-workflows       (Re-)deploy incident-response workflows from platform/workflows/
   provision-alerts    (Re-)deploy Kibana alert rules from platform/alerts/
+  provision-ingest-pipelines  (Re-)deploy ES ingest pipelines from platform/ingest-pipelines/ and set as default_pipeline on traces index
   provision-spaces    (Re-)deploy Kibana spaces from platform/spaces/
   provision-rbac      (Re-)deploy Kibana roles from platform/rbac/
   provision-product-team  Create product team project, configure CPS, deploy dashboards
@@ -2004,6 +2005,48 @@ reset_demo() {
   echo "✓ Demo reset complete"
 }
 
+# ── Ingest pipeline provisioning ─────────────────────────────────────────────
+provision_ingest_pipelines() {
+  echo "→ Provisioning ingest pipelines"
+  local ES="${ELASTICSEARCH_URL}"
+  local AUTH="Authorization: ApiKey ${ELASTIC_INGEST_API_KEY}"
+  local PIPELINES_DIR="${ROOT_DIR}/platform/ingest-pipelines"
+
+  for PIPELINE_FILE in "${PIPELINES_DIR}"/*.json; do
+    [[ -f "${PIPELINE_FILE}" ]] || continue
+    local PIPELINE_ID
+    PIPELINE_ID=$(basename "${PIPELINE_FILE}" .json)
+
+    local HTTP_CODE
+    HTTP_CODE=$(curl -s -o /tmp/pipeline_resp.json -w "%{http_code}" \
+      -X PUT "${ES}/_ingest/pipeline/${PIPELINE_ID}" \
+      -H "${AUTH}" -H "Content-Type: application/json" \
+      --data-binary "@${PIPELINE_FILE}")
+
+    if [[ "${HTTP_CODE}" =~ ^2 ]]; then
+      echo "  ✓ ${PIPELINE_ID}"
+    else
+      echo "  ✗ ${PIPELINE_ID} (HTTP ${HTTP_CODE}): $(cat /tmp/pipeline_resp.json 2>/dev/null | head -1)"
+      rm -f /tmp/pipeline_resp.json
+      return 1
+    fi
+
+    # Apply as default_pipeline on the traces index so new spans are automatically redacted
+    HTTP_CODE=$(curl -s -o /tmp/idx_resp.json -w "%{http_code}" \
+      -X PUT "${ES}/traces-generic.otel-default/_settings" \
+      -H "${AUTH}" -H "Content-Type: application/json" \
+      -d "{\"index\": {\"default_pipeline\": \"${PIPELINE_ID}\"}}")
+
+    if [[ "${HTTP_CODE}" =~ ^2 ]]; then
+      echo "  ✓ ${PIPELINE_ID} set as default_pipeline on traces-generic.otel-default"
+    else
+      echo "  ✗ Failed to set default_pipeline (HTTP ${HTTP_CODE}): $(cat /tmp/idx_resp.json 2>/dev/null | head -1)"
+    fi
+
+    rm -f /tmp/pipeline_resp.json /tmp/idx_resp.json
+  done
+}
+
 # ── Dispatch ──────────────────────────────────────────────────────────────────
 
 case "${1:-}" in
@@ -2032,6 +2075,7 @@ case "${1:-}" in
   provision-product-team)    provision_product_team ;;
   provision-team)            provision_team "checkout" "product-team" ;;
   provision-profiling-deployment) provision_profiling_deployment ;;
+  provision-ingest-pipelines) provision_ingest_pipelines ;;
   refresh-key)
     PROJECT_ID="${ELASTIC_PROJECT_ID:-}"
     if [[ -z "${PROJECT_ID}" ]]; then

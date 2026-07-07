@@ -13,7 +13,7 @@
 # 1. Confirm all containers are up
 docker compose ps
 
-# 2. Run smoke tests — must be 45/45 before you start
+# 2. Run smoke tests — must be 46/46 before you start
 ./scripts/demo.sh test
 
 # 3. Confirm data is fresh (last 5 min)
@@ -312,9 +312,13 @@ Show the Kafka spans — producer and consumer linked by `trace_id`.
 > adding 650ms per checkout, timing out 8% of transactions — cascading into order-service 
 > and Kafka lag — confirmed by distributed trace and live ES|QL query, without leaving Elastic.
 >
-> PII handling note: card numbers and email addresses in checkout spans are masked 
-> at the service level before they reach the collector. That's a GDPR guarantee, 
-> not a process — the field never hits the wire unmasked."
+> PII handling note: card numbers and email addresses leave the service unmasked — 
+> that's intentional for the demo. What redacts them is an Elasticsearch ingest 
+> pipeline (`pii-masking`) that runs before the document is written to disk. 
+> The field travels through the collector and arrives at Elasticsearch; the pipeline 
+> intercepts it at ingest and replaces it with `<PII>` before storage. 
+> What's on disk is never the raw value — that's the GDPR guarantee. 
+> Run `./scripts/demo.sh provision-ingest-pipelines` to deploy the pipeline."
 
 ### 1.8 The autonomous SRE (3 min) — "oh, by the way"
 
@@ -619,6 +623,11 @@ GET /traces-generic.otel-default/_search
 >
 > If you move to a different backend tomorrow, the data model is already 
 > in an open standard. Your instrumentation doesn't change."
+
+> "If PII masking is active: the `attributes.user.email` and `attributes.payment.card_number` 
+> fields you see in this document will read `<PII>` — redacted by the ingest pipeline 
+> before storage. The same pipeline config lives in `platform/ingest-pipelines/` in Git 
+> and is provisioned with a single command. That's infrastructure-as-code for data governance."
 
 ### 4.2 ES|QL access (4 min)
 

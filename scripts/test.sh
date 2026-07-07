@@ -201,7 +201,7 @@ else
   RAW_CARDS=$(es_count "traces-*" '{
     "query": {"bool": {"must": [
       {"term": {"resource.attributes.service.name": "checkout-service"}},
-      {"regexp": {"attributes.card.number.keyword": "[0-9]{16}"}}
+      {"regexp": {"attributes.payment.card_number.keyword": "[0-9]{16}"}}
     ]}}
   }')
   if [[ "${RAW_CARDS}" == "0" ]]; then

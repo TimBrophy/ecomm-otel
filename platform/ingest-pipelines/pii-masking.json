@@ -1,0 +1,27 @@
+{
+  "description": "Redact PII span attributes from checkout-service traces before storage. Replaces user.email and payment.card_number with <PII> markers using the redact processor.",
+  "processors": [
+    {
+      "redact": {
+        "description": "Redact email address from checkout span attributes",
+        "field": "attributes.user.email",
+        "patterns": ["%{EMAIL:PII}"],
+        "pattern_definitions": {
+          "EMAIL": "[a-zA-Z0-9._%+\\-]+@[a-zA-Z0-9.\\-]+\\.[a-zA-Z]{2,}"
+        },
+        "ignore_missing": true
+      }
+    },
+    {
+      "redact": {
+        "description": "Redact card number from checkout span attributes, preserving last 4 digits would require a script — for demo purposes replace entirely",
+        "field": "attributes.payment.card_number",
+        "patterns": ["%{CREDITCARD:PII}"],
+        "pattern_definitions": {
+          "CREDITCARD": "[0-9]{13,19}"
+        },
+        "ignore_missing": true
+      }
+    }
+  ]
+}
