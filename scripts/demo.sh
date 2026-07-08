@@ -28,6 +28,10 @@ Granular commands:
   apply-profiling-host  Destroy + rebuild EC2 host enrolled to stateful ESS Fleet (Universal Profiling)
   deploy-profiling-stress  Install + start checkout stress workload on EC2 profiling host
   destroy-aws         Destroy EC2 profiling host
+  apply-prod-host     Create EC2 prod app host: full stack in prod mode, forwards to Elastic Cloud (env=prod)
+  deploy-prod-stack   Redeploy the stack on the existing prod host (git pull + rebuild via SSM)
+  prod-status         Show prod app host instance ID / IP / SSM connect command
+  teardown-prod       Destroy the EC2 prod app host
   provision-profiling-deployment  Spin up stateful ESS deployment for Universal Profiling (run once)
   init                terraform init for infra/elastic
   plan                terraform plan for infra/elastic
@@ -1346,6 +1350,141 @@ tf_destroy_aws() {
   _destroy_aws
 }
 
+# ── Prod app host (infra/aws-prod) ────────────────────────────────────────────
+# A standalone EC2 host that runs the FULL stack in "prod" mode (docker-compose
+# + docker-compose.prod.yml) and forwards to the SAME Elastic Cloud project as
+# the local stack — tagged deployment.environment=prod. Separate Terraform state
+# from infra/aws (the profiling host) so the two lifecycles never collide.
+
+_prod_repo_url() {
+  # PROD_REPO_URL wins; otherwise derive from the git origin. Must be reachable
+  # from EC2 (public, or a URL that embeds a PAT/deploy token for a private repo).
+  echo "${PROD_REPO_URL:-$(git -C "${ROOT_DIR}" remote get-url origin 2>/dev/null || true)}"
+}
+
+tf_apply_prod_host() {
+  echo "→ Apply: infra/aws-prod — EC2 prod app host (full stack → Elastic Cloud, env=prod)"
+
+  set -a; source "${ROOT_DIR}/.env"; set +a
+
+  for KEY in ELASTIC_INGEST_ENDPOINT ELASTIC_INGEST_API_KEY; do
+    local VAL
+    VAL=$(grep "^${KEY}=" "${ROOT_DIR}/.env" 2>/dev/null | head -1 | cut -d= -f2- | tr -d '"')
+    if [[ -z "${VAL}" ]]; then
+      echo "  ✗ ${KEY} not set in .env — run './scripts/demo.sh apply' (or 'refresh-key') first" >&2
+      return 1
+    fi
+  done
+
+  for TAG_KEY in TEAM PROJECT; do
+    local TAG_VAL
+    TAG_VAL=$(grep "^${TAG_KEY}=" "${ROOT_DIR}/.env" 2>/dev/null | head -1 | cut -d= -f2- | tr -d '"')
+    if [[ -z "${TAG_VAL}" ]]; then
+      echo "  ✗ ${TAG_KEY} not set in .env — required for AWS resource tagging (Elastic SA policy)" >&2
+      return 1
+    fi
+  done
+
+  local REPO_URL REPO_REF
+  REPO_URL="$(_prod_repo_url)"
+  if [[ -z "${REPO_URL}" ]]; then
+    echo "  ✗ No repo URL — set PROD_REPO_URL in .env (the prod host clones/builds from it)" >&2
+    echo "    It must be reachable from EC2: a public URL, or one embedding a PAT for a private repo." >&2
+    return 1
+  fi
+  REPO_REF="${PROD_REPO_REF:-$(git -C "${ROOT_DIR}" rev-parse --abbrev-ref HEAD 2>/dev/null || echo main)}"
+  echo "  Repo: ${REPO_URL} @ ${REPO_REF}"
+
+  (cd "${ROOT_DIR}/infra/aws-prod" && terraform init -reconfigure)
+
+  (cd "${ROOT_DIR}/infra/aws-prod" && terraform apply -auto-approve \
+    -var="elastic_ingest_endpoint=${ELASTIC_INGEST_ENDPOINT}" \
+    -var="elastic_ingest_api_key=${ELASTIC_INGEST_API_KEY}" \
+    -var="prod_repo_url=${REPO_URL}" \
+    -var="prod_repo_ref=${REPO_REF}" \
+    -var="team=${TEAM}" \
+    -var="project=${PROJECT}" \
+    ${AWS_REGION:+-var="aws_region=${AWS_REGION}"} \
+    ${PROD_INSTANCE_TYPE:+-var="prod_instance_type=${PROD_INSTANCE_TYPE}"} \
+    ${KEEP_UNTIL:+-var="keep_until=${KEEP_UNTIL}"} \
+    ${KEY_PAIR_NAME:+-var="key_pair_name=${KEY_PAIR_NAME}"})
+
+  local INSTANCE_ID PUBLIC_IP SSM_CMD
+  INSTANCE_ID=$(cd "${ROOT_DIR}/infra/aws-prod" && terraform output -raw prod_host_instance_id 2>/dev/null || echo "pending")
+  PUBLIC_IP=$(cd "${ROOT_DIR}/infra/aws-prod" && terraform output -raw prod_host_public_ip 2>/dev/null || echo "pending")
+  SSM_CMD=$(cd "${ROOT_DIR}/infra/aws-prod" && terraform output -raw ssm_connect_command 2>/dev/null || echo "")
+
+  echo ""
+  echo "✓ Prod app host provisioning started"
+  echo "  Instance ID : ${INSTANCE_ID}"
+  echo "  Public IP   : ${PUBLIC_IP}"
+  echo ""
+  echo "  Bootstrap takes ~4-6 min (Docker install + image builds). Watch it:"
+  echo "  ${SSM_CMD}"
+  echo "  Then: sudo tail -f /var/log/ecomm-prod-deploy.log"
+  echo ""
+  echo "  Verify in Kibana once data flows (~6-8 min): APM > Services, filter"
+  echo "  environment = prod. Or ES|QL:"
+  echo "    FROM traces-* | WHERE resource.attributes.deployment.environment == \"prod\""
+  echo "    | STATS c=COUNT(*) BY resource.attributes.service.name"
+}
+
+deploy_prod_stack() {
+  # Redeploy the stack on the EXISTING host (git pull + rebuild) without recreating
+  # the instance. Requires the aws CLI configured.
+  set -a; source "${ROOT_DIR}/.env"; set +a
+  local INSTANCE_ID
+  INSTANCE_ID=$(cd "${ROOT_DIR}/infra/aws-prod" && terraform output -raw prod_host_instance_id 2>/dev/null || echo "")
+  if [[ -z "${INSTANCE_ID}" ]]; then
+    echo "  ✗ Prod host not provisioned — run './scripts/demo.sh apply-prod-host' first" >&2
+    return 1
+  fi
+
+  echo "→ Redeploying prod stack on ${INSTANCE_ID} via SSM (git pull + rebuild)…"
+  local CMD_ID
+  CMD_ID=$(aws ssm send-command \
+    --region "${AWS_REGION:-eu-central-1}" \
+    --instance-ids "${INSTANCE_ID}" \
+    --document-name "AWS-RunShellScript" \
+    --comment "ecomm-otel prod redeploy" \
+    --parameters 'commands=["cd /opt/ecomm-otel","git pull --ff-only","docker compose -f docker-compose.yml -f docker-compose.prod.yml --profile load up -d --build"]' \
+    --query "Command.CommandId" --output text)
+  echo "  SSM command: ${CMD_ID}"
+  echo "  Poll: aws ssm get-command-invocation --region ${AWS_REGION:-eu-central-1} --command-id ${CMD_ID} --instance-id ${INSTANCE_ID}"
+}
+
+prod_status() {
+  local INSTANCE_ID PUBLIC_IP
+  INSTANCE_ID=$(cd "${ROOT_DIR}/infra/aws-prod" && terraform output -raw prod_host_instance_id 2>/dev/null || echo "")
+  if [[ -z "${INSTANCE_ID}" ]]; then
+    echo "  Prod host: not provisioned (run 'apply-prod-host')"
+    return 0
+  fi
+  PUBLIC_IP=$(cd "${ROOT_DIR}/infra/aws-prod" && terraform output -raw prod_host_public_ip 2>/dev/null || echo "?")
+  echo "  Prod host : ${INSTANCE_ID} (${PUBLIC_IP})"
+  echo "  SSM       : aws ssm start-session --target ${INSTANCE_ID} --region ${AWS_REGION:-eu-central-1}"
+}
+
+_destroy_prod() {
+  (cd "${ROOT_DIR}/infra/aws-prod" && terraform destroy -auto-approve \
+    -var="elastic_ingest_endpoint=${ELASTIC_INGEST_ENDPOINT:-dummy}" \
+    -var="elastic_ingest_api_key=${ELASTIC_INGEST_API_KEY:-dummy}" \
+    -var="prod_repo_url=${PROD_REPO_URL:-dummy}" \
+    -var="team=${TEAM:-field}" \
+    -var="project=${PROJECT:-unknown}" \
+    ${AWS_REGION:+-var="aws_region=${AWS_REGION}"} \
+    ${KEEP_UNTIL:+-var="keep_until=${KEEP_UNTIL}"} \
+    ${KEY_PAIR_NAME:+-var="key_pair_name=${KEY_PAIR_NAME}"})
+  echo "✓ Prod app host destroyed."
+}
+
+tf_teardown_prod() {
+  echo "WARNING: This will destroy the EC2 prod app host (infra/aws-prod)."
+  read -rp "Type 'destroy' to confirm: " confirm
+  [[ "${confirm}" == "destroy" ]] || { echo "Aborted."; exit 1; }
+  _destroy_prod
+}
+
 # ── Master build / teardown ───────────────────────────────────────────────────
 
 build_all() {
@@ -2075,6 +2214,10 @@ case "${1:-}" in
   apply-profiling-host)      tf_apply_profiling_host ;;
   deploy-profiling-stress)   deploy_profiling_stress ;;
   destroy-aws)      tf_destroy_aws ;;
+  apply-prod-host)  tf_apply_prod_host ;;
+  deploy-prod-stack) deploy_prod_stack ;;
+  prod-status)      prod_status ;;
+  teardown-prod)    tf_teardown_prod ;;
   provision-fleet)     provision_fleet_policy ;;
   provision-connector) provision_slack_connector ;;
   init)             tf_init ;;
