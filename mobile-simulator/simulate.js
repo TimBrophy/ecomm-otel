@@ -85,13 +85,14 @@ async function runSession(browser, id) {
       page.waitForSelector('#error-box:not(.d-none)',    { timeout: 10000 }),
     ]).catch(() => {});
 
+    // Navigate back to homepage to trigger Embrace SDK flush before context close.
+    await page.goto(STOREFRONT_URL, { waitUntil: 'domcontentloaded', timeout: 10000 }).catch(() => {});
+
     console.log(`[mobile ${id}] checkout complete`);
   } catch (err) {
     console.error(`[mobile ${id}] error: ${err.message}`);
   } finally {
-    // Give the Embrace SDK time to flush its beacon before the context closes.
-    // 4s covers the worst-case fraud-check latency (900ms) + exporter flush.
-    await sleep(4000);
+    await sleep(1000);
     await context.close();
   }
 }
