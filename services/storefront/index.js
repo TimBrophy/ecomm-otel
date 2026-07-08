@@ -128,8 +128,10 @@ app.get('/checkout', async (req, res) => {
   // checkout-service pings FraudShield, making TTFB (and therefore LCP) degrade
   // in the browser. The distributed trace links this page load to the root cause.
   const preflightStart = Date.now();
+  let fraudDetectionActive = 'false';
   try {
-    await axios.get(`${API_GATEWAY_URL}/api/checkout/validate`);
+    const validateResp = await axios.get(`${API_GATEWAY_URL}/api/checkout/validate`);
+    fraudDetectionActive = validateResp.data.fraud_detection_active ? 'true' : 'false';
   } catch (_) {
     // Non-fatal — page renders even if validation is unreachable
   }
@@ -158,6 +160,8 @@ ${navBar()}
   </form>
 </div>
 <script>
+  var __fraudDetectionActive = '${fraudDetectionActive}';
+
   document.getElementById('checkout-form').addEventListener('submit', async function(e) {
     e.preventDefault();
     const btn = document.getElementById('submit-btn');
@@ -168,11 +172,19 @@ ${navBar()}
     btn.disabled = true;
     btn.textContent = 'Processing…';
 
+    const productId = document.getElementById('productId').value;
     const payload = {
-      productId: document.getElementById('productId').value,
+      productId,
       email: document.getElementById('email').value,
       cardNumber: document.getElementById('cardNumber').value,
     };
+
+    const span = window.__embraceTrace && window.__embraceTrace.startSpan('checkout_attempt', {
+      attributes: {
+        'product_id': productId || 'unknown',
+        'fraud_detection_active': __fraudDetectionActive,
+      },
+    });
 
     try {
       const res = await fetch('/api/checkout', {
@@ -182,6 +194,11 @@ ${navBar()}
       });
       const data = await res.json().catch(() => ({}));
       if (res.ok) {
+        if (span) {
+          span.setAttribute('checkout.result', 'success');
+          span.setAttribute('order_id', data.orderId || 'unknown');
+          span.end();
+        }
         document.getElementById('checkout-form').classList.add('d-none');
         confirmBox.textContent = 'Order confirmed! ' + (data.message || ('Order ID: ' + (data.orderId || 'N/A')));
         confirmBox.classList.remove('d-none');
@@ -189,6 +206,11 @@ ${navBar()}
         throw new Error(data.error || data.message || ('HTTP ' + res.status));
       }
     } catch (err) {
+      if (span) {
+        span.setAttribute('checkout.result', 'error');
+        span.setAttribute('error.message', err.message);
+        span.fail();
+      }
       errorBox.textContent = 'Checkout failed: ' + err.message;
       errorBox.classList.remove('d-none');
       btn.disabled = false;
