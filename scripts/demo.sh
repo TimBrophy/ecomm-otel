@@ -756,6 +756,10 @@ for c in json.loads(sys.argv[1]):
     if c.get('id') == sys.argv[2]:
         print(json.dumps([ch['id'] for ch in c.get('config',{}).get('allowedChannels',[])])); break
 " "${_CONNECTORS}" "${SLACK_CONNECTOR_ID}" 2>/dev/null || echo "[]")
+      # Kibana's connectors list API often omits allowedChannels — fall back to env var
+      if [[ "${SLACK_CHANNEL_IDS}" == "[]" ]] && [[ -n "${SLACK_CHANNEL_ID:-}" ]]; then
+        SLACK_CHANNEL_IDS="[\"${SLACK_CHANNEL_ID}\"]"
+      fi
       echo "  → Slack connector found (${SLACK_CONNECTOR_ID}) — wiring to alert actions"
     else
       echo "  – No Slack connector found (run 'terraform apply' with TF_VAR_slack_token set to wire alerts)"
