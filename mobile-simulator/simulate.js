@@ -69,7 +69,7 @@ async function runSession(browser, id) {
     }
 
     // ── Checkout ─────────────────────────────────────────────────────────
-    await page.goto(`${STOREFRONT_URL}/checkout`, { waitUntil: 'domcontentloaded', timeout: 10000 });
+    await page.goto(`${STOREFRONT_URL}/checkout`, { waitUntil: 'networkidle', timeout: 15000 });
     await sleep(thinkTime());
 
     await page.tap('#email');

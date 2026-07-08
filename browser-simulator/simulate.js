@@ -23,9 +23,7 @@ function pick(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 
 async function runSession(browser, id) {
-  const context = await browser.newContext({
-    userAgent: 'Mozilla/5.0 (ecomm-otel-browser-simulator/1.0) Chrome/120',
-  });
+  const context = await browser.newContext();
   const page = await context.newPage();
 
   try {
@@ -43,7 +41,7 @@ async function runSession(browser, id) {
     }
 
     // ── Checkout ─────────────────────────────────────────────────────────
-    await page.goto(`${STOREFRONT_URL}/checkout`, { waitUntil: 'domcontentloaded', timeout: 10000 });
+    await page.goto(`${STOREFRONT_URL}/checkout`, { waitUntil: 'networkidle', timeout: 15000 });
     await page.fill('#email',      pick(EMAILS));
     await page.fill('#cardNumber', pick(CARDS));
     await sleep(500);
