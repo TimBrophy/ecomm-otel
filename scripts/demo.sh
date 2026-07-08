@@ -816,7 +816,7 @@ slack_id = sys.argv[3] if len(sys.argv) > 3 else ''
 try: channels = json.loads(sys.argv[4]) if len(sys.argv) > 4 else []
 except: channels = []
 if slack_id and channels:
-    def mk(g, t): return {'id': slack_id, 'group': g, 'params': {'channelIds': channels, 'text': t}, 'frequency': {'summary': False, 'notify_when': 'onActionGroupChange', 'throttle': None}}
+    def mk(g, t): return {'id': slack_id, 'group': g, 'params': {'subAction': 'postMessage', 'subActionParams': {'channels': channels, 'text': t}}, 'frequency': {'summary': False, 'notify_when': 'onActionGroupChange', 'throttle': None}}
     rule['actions'] = [mk('slo.burnRate.alert', ':rotating_light: *{{rule.name}}* — critical burn rate'), mk('slo.burnRate.high', ':warning: *{{rule.name}}* — high burn rate'), mk('recovered', ':white_check_mark: *{{rule.name}}* — burn rate recovered')]
 print(json.dumps(rule))
 " "${ALERT_FILE}" "${SLO_ID}" "${SLACK_CONNECTOR_ID}" "${SLACK_CHANNEL_IDS}")
@@ -830,7 +830,7 @@ slack_id = sys.argv[2] if len(sys.argv) > 2 else ''
 try: channels = json.loads(sys.argv[3]) if len(sys.argv) > 3 else []
 except: channels = []
 if slack_id and channels:
-    def mk(g, t): return {'id': slack_id, 'group': g, 'params': {'channelIds': channels, 'text': t}, 'frequency': {'summary': False, 'notify_when': 'onActionGroupChange', 'throttle': None}}
+    def mk(g, t): return {'id': slack_id, 'group': g, 'params': {'subAction': 'postMessage', 'subActionParams': {'channels': channels, 'text': t}}, 'frequency': {'summary': False, 'notify_when': 'onActionGroupChange', 'throttle': None}}
     rule['actions'] = [mk('query matched', ':fire: *{{rule.name}}* fired'), mk('recovered', ':white_check_mark: *{{rule.name}}* resolved')]
 print(json.dumps(rule))
 " "${ALERT_FILE}" "${SLACK_CONNECTOR_ID}" "${SLACK_CHANNEL_IDS}")
