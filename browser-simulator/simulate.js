@@ -19,11 +19,30 @@ const THINK_TIME     = parseInt(process.env.THINK_TIME_MS || '1500', 10);
 const EMAILS = ['alice@example.com', 'bob@example.com', 'carol@example.com', 'dave@example.com'];
 const CARDS  = ['4111111111111111', '5500005555555559', '340000000000009'];
 
+const REGIONS = [
+  { name: 'Amsterdam',     locale: 'nl-NL', timezoneId: 'Europe/Amsterdam',   geolocation: { latitude: 52.37, longitude:   4.90 } },
+  { name: 'London',        locale: 'en-GB', timezoneId: 'Europe/London',       geolocation: { latitude: 51.51, longitude:  -0.12 } },
+  { name: 'Paris',         locale: 'fr-FR', timezoneId: 'Europe/Paris',        geolocation: { latitude: 48.86, longitude:   2.35 } },
+  { name: 'New York',      locale: 'en-US', timezoneId: 'America/New_York',    geolocation: { latitude: 40.71, longitude: -74.01 } },
+  { name: 'Los Angeles',   locale: 'en-US', timezoneId: 'America/Los_Angeles', geolocation: { latitude: 34.05, longitude: -118.24 } },
+  { name: 'Singapore',     locale: 'en-SG', timezoneId: 'Asia/Singapore',      geolocation: { latitude:  1.35, longitude: 103.82 } },
+  { name: 'Tokyo',         locale: 'ja-JP', timezoneId: 'Asia/Tokyo',          geolocation: { latitude: 35.68, longitude: 139.69 } },
+  { name: 'Sydney',        locale: 'en-AU', timezoneId: 'Australia/Sydney',    geolocation: { latitude: -33.87, longitude: 151.21 } },
+  { name: 'Dubai',         locale: 'ar-AE', timezoneId: 'Asia/Dubai',          geolocation: { latitude: 25.20, longitude:  55.27 } },
+  { name: 'São Paulo',     locale: 'pt-BR', timezoneId: 'America/Sao_Paulo',   geolocation: { latitude: -23.55, longitude: -46.63 } },
+];
+
 function pick(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 
 async function runSession(browser, id) {
-  const context = await browser.newContext();
+  const region  = pick(REGIONS);
+  const context = await browser.newContext({
+    locale:      region.locale,
+    timezoneId:  region.timezoneId,
+    geolocation: region.geolocation,
+    permissions: ['geolocation'],
+  });
   const page = await context.newPage();
 
   try {
@@ -57,7 +76,7 @@ async function runSession(browser, id) {
     // context closes (same mechanism as a real user moving to the next page).
     await page.goto(STOREFRONT_URL, { waitUntil: 'domcontentloaded', timeout: 10000 }).catch(() => {});
 
-    console.log(`[session ${id}] checkout complete`);
+    console.log(`[session ${id}] checkout complete (${region.name})`);
   } catch (err) {
     console.error(`[session ${id}] error: ${err.message}`);
   } finally {
