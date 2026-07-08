@@ -13,20 +13,27 @@
 # 1. Confirm all containers are up
 docker compose ps
 
-# 2. Run smoke tests — must be 46/46 before you start
+# 2. Confirm browser + mobile simulators are running (needed for Embrace RUM)
+docker compose --profile rum ps | grep -E "browser-simulator|mobile-simulator"
+# If not running:
+docker compose --profile load up -d load-generator
+docker compose --profile rum up -d browser-simulator mobile-simulator
+
+# 3. Run smoke tests — must be all green before you start
 ./scripts/demo.sh test
 
-# 3. Confirm data is fresh (last 5 min)
+# 4. Confirm data is fresh (last 5 min)
 # Check: Kibana > Discover > traces-* — should show recent spans
 
-# 4. Reset demo flags to clean baseline
+# 5. Reset demo flags to clean baseline
 ./scripts/demo.sh reset
 
-# 5. Open the profiling Kibana tab (stateful ESS — separate from Serverless):
+# 6. Open the profiling Kibana tab (stateful ESS — separate from Serverless):
 #    ${PROFILING_KIBANA_URL}
 #    Navigate: Observability > Universal Profiling
 
-# 6. Open these tabs in advance:
+# 7. Open these tabs in advance:
+#   - Embrace dashboard (embrace.io) — Sessions view, filtered to checkout_attempt spans
 #   - Kibana > Observability > APM > Services
 #   - Kibana > Observability > SLOs
 #   - Kibana > Observability > Infrastructure > Hosts
@@ -85,7 +92,44 @@ Run in terminal (keep it visible — it's a good demo moment):
 
 The incident stays active until you run `./scripts/demo.sh reset`. Move on — let latency build.
 
-### 1.3 Show the service map (3 min)
+### 1.3 Browser RUM — the first signal (3 min)
+
+Navigate to the **Embrace dashboard** (embrace.io).
+
+> "While latency builds on the backend, the first signal actually hits the browser. 
+> Our storefront runs the Embrace Web SDK — every real user session generates 
+> Core Web Vitals, network timing, and custom business spans."
+
+Show the **Sessions** view — point to sessions with `checkout_attempt` spans.
+
+> "These sessions are coming from our browser and mobile simulators — real headless 
+> Chromium instances running Playwright, cycling through the full checkout flow across 
+> ten simulated regions: Amsterdam, Tokyo, New York, São Paulo."
+
+Click into a checkout session. Show the `checkout_attempt` span:
+
+> "We instrument the checkout form submit explicitly — this is a named business span. 
+> It has two key attributes: `product_id` and `fraud_detection_active`. 
+> Right now it reads `'true'` — that flag flipped the moment we ran trigger-incident. 
+> And when a fraud check times out, this span ends with `fail()` — it shows as a 
+> failed trace, not just a slow one."
+
+Show the **LCP** value on the same session's page load:
+
+> "But here's what's interesting — it's not just the checkout POST that's slow. 
+> The *page load* is slow too. Before rendering the checkout form, the storefront 
+> makes a pre-flight call to validate checkout readiness. That call goes all the way 
+> through to checkout-service — and when fraud detection is active, checkout-service 
+> pings FraudShield before responding. That's 200–500ms added to TTFB. 
+> LCP degrades before the user has even typed their card number."
+
+Point to the `Server-Timing: checkout-validate;dur=Xms` value in the network waterfall if visible:
+
+> "The `Server-Timing` header makes this explicit in the browser: that duration is 
+> pure server time on the checkout validate call — not rendering, not JavaScript, 
+> not the user's network. It's checkout-service being slow."
+
+### 1.5 Show the service map (3 min)
 
 Navigate: **APM > Service Map**
 
@@ -102,7 +146,7 @@ Point out:
 
 *Note: anomaly detection health badges require ML jobs to be created via the APM Settings UI (one-time setup). The API for ML anomaly jobs is restricted in Serverless — this is a UI-only step before the demo.*
 
-### 1.4 Drill into the trace (5 min)
+### 1.6 Drill into the trace (5 min)
 
 Navigate: **APM > Services > checkout-service > Transactions > POST /checkout**
 
@@ -134,7 +178,7 @@ Point out:
 > The fraud check is a synchronous call to an external API — it's adding 600ms to every checkout 
 > and timing out on nearly 1 in 10 transactions."
 
-### 1.5 Confirm with ES|QL (5 min)
+### 1.7 Confirm with ES|QL (5 min)
 
 Navigate: **Discover** → switch to **ES|QL** mode (toggle top-left).
 
@@ -285,7 +329,7 @@ TS metrics-*
 > collapsing as the FraudShield queue fills — the counter side of the same incident 
 > the latency chart just showed."
 
-### 1.6 Kafka visibility (3 min)
+### 1.8 Kafka visibility (3 min)
 
 Navigate: **Discover** → ES|QL mode. Paste and run:
 
@@ -305,22 +349,20 @@ FROM traces-*
 
 Show the Kafka spans — producer and consumer linked by `trace_id`.
 
-### 1.7 Root cause summary (2 min)
+### 1.9 Root cause summary (2 min)
 
 > "Total time to root cause: minutes, not hours. We went from 'checkout is slow' to 
 > 'realtime_fraud_detection flag enabled at 14:32, synchronous FraudShield API call 
 > adding 650ms per checkout, timing out 8% of transactions — cascading into order-service 
 > and Kafka lag — confirmed by distributed trace and live ES|QL query, without leaving Elastic.
 >
-> PII handling note: card numbers and email addresses leave the service unmasked — 
-> that's intentional for the demo. What redacts them is an Elasticsearch ingest 
-> pipeline (`pii-masking`) that runs before the document is written to disk. 
-> The field travels through the collector and arrives at Elasticsearch; the pipeline 
-> intercepts it at ingest and replaces it with `<PII>` before storage. 
-> What's on disk is never the raw value — that's the GDPR guarantee. 
-> Run `./scripts/demo.sh provision-ingest-pipelines` to deploy the pipeline."
+> And we saw it in the browser first. LCP on the checkout page degraded before the 
+> form was even submitted — the pre-flight validate call told us something was wrong 
+> upstream. The `checkout_attempt` spans in Embrace showed `fraud_detection_active: true` 
+> across every session, globally. The investigation went browser → trace → root cause, 
+> one continuous thread."
 
-### 1.8 The autonomous SRE (3 min) — "oh, by the way"
+### 1.10 The autonomous SRE (3 min) — "oh, by the way"
 
 > "One more thing. Remember that terminal command back at the start — `trigger-incident`? 
 > That didn't just flip a flag. It also kicked off an autonomous investigation, running 
@@ -380,8 +422,8 @@ Run in terminal:
 Navigate: **Observability > SLOs**
 
 Four SLOs are pre-provisioned:
-- **Checkout Service — P99 Latency** (target: 95% of requests under 500ms)
-- **Checkout Service — Error Rate** (target: 99% success rate)
+- **Checkout Service — P99 Latency** (target: 99.9% of requests under 500ms)
+- **Checkout Service — Error Rate** (target: 99.9% success rate)
 - **API Gateway — Availability** (target: 99.9% uptime)
 - **Order Fulfilment Rate** (target: 99.5% of orders fulfilled)
 
@@ -489,8 +531,6 @@ Share your terminal or editor:
 
 ```
 platform/                  ← central platform team owns this
-├── ingest-pipelines/
-│   └── pii-masking.json   ← PII redaction before storage
 ├── slos/
 │   ├── checkout-latency.json
 │   ├── checkout-errors.json
@@ -618,11 +658,6 @@ GET /traces-generic.otel-default/_search
 >
 > If you move to a different backend tomorrow, the data model is already 
 > in an open standard. Your instrumentation doesn't change."
-
-> "If PII masking is active: the `attributes.user.email` and `attributes.payment.card_number` 
-> fields you see in this document will read `<PII>` — redacted by the ingest pipeline 
-> before storage. The same pipeline config lives in `platform/ingest-pipelines/` in Git 
-> and is provisioned with a single command. That's infrastructure-as-code for data governance."
 
 ### 4.2 ES|QL access (4 min)
 
@@ -783,7 +818,8 @@ Be transparent — technically sophisticated audiences will ask:
 | Elastic Cloud Serverless | ✅ Live project, real ingest | — |
 | Kafka | ✅ Confluent-compatible, traced end-to-end | — |
 | Traffic load | ✅ Load generator → storefront → api-gateway (full path, service map complete) | — |
-| Mobile RUM | ❌ | Load generator sends mobile-shaped requests |
+| Browser RUM | ✅ Playwright browser-simulator (3 workers) → full checkout flow, Embrace SDK fires real LCP/INP/checkout_attempt spans | — |
+| Mobile RUM | ✅ Playwright mobile-simulator (8 workers, iOS/Android device emulation) → 40% abandonment rate, real Embrace RUM events | — |
 | AWS Lambda | ❌ | Not wired in this build |
 | Fleet-managed Elastic Agent | ✅ Enrolled, system integration collecting host metrics | — |
 | Universal Profiling | ✅ Stateful ESS deployment (`ecomm-otel-demo-profiling`), EC2 host enrolled to Fleet, CheckoutStress Java workload generating flame graphs | — |
