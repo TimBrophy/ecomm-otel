@@ -89,8 +89,9 @@ async function runSession(browser, id) {
   } catch (err) {
     console.error(`[mobile ${id}] error: ${err.message}`);
   } finally {
-    // Give the Embrace SDK time to flush its beacon before the context closes
-    await sleep(2000);
+    // Give the Embrace SDK time to flush its beacon before the context closes.
+    // 4s covers the worst-case fraud-check latency (900ms) + exporter flush.
+    await sleep(4000);
     await context.close();
   }
 }
