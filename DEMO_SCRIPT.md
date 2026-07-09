@@ -103,8 +103,18 @@ Navigate to the **Embrace dashboard** (embrace.io).
 Show the **Sessions** view — point to sessions with `checkout_attempt` spans.
 
 > "These sessions are coming from our browser and mobile simulators — real headless 
-> Chromium instances running Playwright, cycling through the full checkout flow across 
-> ten simulated regions: Amsterdam, Tokyo, New York, São Paulo."
+> Chromium instances running Playwright, cycling through the full checkout flow with 
+> locale, timezone, and geolocation spoofed across ten regions: Amsterdam, Tokyo, 
+> New York, São Paulo."
+
+**Known limitation:** Embrace's Sessions view geolocates by source IP, not by the
+spoofed browser locale/timezone/geolocation the simulators set — since all simulator
+traffic egresses from the same Docker host, every session still shows the host's
+actual region (Netherlands) in the Embrace UI. Don't claim the dashboard will visibly
+show ten different regions; the regional diversity exists in the simulated client
+context (useful for locale-based checkout logic, timezone-aware timestamps, etc.),
+not in Embrace's own geo attribution. If asked, route through per-region proxies to
+get real IP diversity — out of scope for this demo.
 
 Click into a checkout session. Show the `checkout_attempt` span:
 
@@ -560,7 +570,7 @@ Open `platform/slos/checkout-latency.json`:
 
 ### 3.4 Platform layer: project isolation as code (3 min)
 
-Navigate: **Dev Tools** or open `infra/elastic/main.tf` in editor.
+Navigate: **Dev Tools** or open `infra/elastic/product-team.tf` in editor.
 
 > "Separation between the platform team and the product team isn't a Kibana space — 
 > it's a separate Elasticsearch project, provisioned by Terraform. 
@@ -569,7 +579,7 @@ Navigate: **Dev Tools** or open `infra/elastic/main.tf` in editor.
 > but they cannot modify platform dashboards, SLOs, or alerts. 
 > That isolation is enforced at the infrastructure level, not by a role assignment."
 
-Point to the `ec_observability_project.product_team` resource in `infra/elastic/main.tf`:
+Point to the `ec_observability_project.product_team` resource in `infra/elastic/product-team.tf`:
 
 > "One Terraform resource. The platform team defines it, reviews it in Git, 
 > and provisions it with a single apply. The product team doesn't manage it — 

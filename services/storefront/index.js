@@ -211,6 +211,15 @@ ${navBar()}
         span.setAttribute('error.message', err.message);
         span.fail();
       }
+      if (window.__embraceLog) {
+        window.__embraceLog.logException(err, {
+          handled: true,
+          attributes: {
+            product_id: productId || 'unknown',
+            fraud_detection_active: __fraudDetectionActive,
+          },
+        });
+      }
       errorBox.textContent = 'Checkout failed: ' + err.message;
       errorBox.classList.remove('d-none');
       btn.disabled = false;
