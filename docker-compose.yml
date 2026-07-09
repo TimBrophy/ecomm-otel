@@ -24,10 +24,12 @@ services:
     image: otel/opentelemetry-collector-contrib:0.155.0
     command: ["--config=/etc/otel/otel-collector.yaml"]
     volumes:
-      - ./collector/otel-collector.yaml:/etc/otel/otel-collector.yaml:ro
+      - ./collector/${COLLECTOR_CONFIG:-otel-collector.yaml}:/etc/otel/otel-collector.yaml:ro
     environment:
       ELASTIC_INGEST_ENDPOINT: ${ELASTIC_INGEST_ENDPOINT:-}
       ELASTIC_INGEST_API_KEY: ${ELASTIC_INGEST_API_KEY:-}
+      AWS_REGION: ${AWS_REGION:-}
+      EC2_INSTANCE_ID: ${EC2_INSTANCE_ID:-}
     ports:
       - "4327:4317"   # OTLP gRPC (host 4327 → container 4317)
       - "4328:4318"   # OTLP HTTP (host 4328 → container 4318)

@@ -49,6 +49,26 @@ resource "aws_iam_role_policy_attachment" "ssm" {
   policy_arn = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
 }
 
+# Read-only — lets the on-host collector's awscloudwatch receiver poll this
+# instance's own EC2 metrics via GetMetricData. CloudWatch metric actions don't
+# support resource-level ARN scoping, so this is scoped by action only.
+resource "aws_iam_role_policy" "cloudwatch_read" {
+  name = "cloudwatch-read"
+  role = aws_iam_role.prod_app.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect = "Allow"
+      Action = [
+        "cloudwatch:GetMetricData",
+        "cloudwatch:ListMetrics",
+      ]
+      Resource = "*"
+    }]
+  })
+}
+
 resource "aws_iam_instance_profile" "prod_app" {
   name = "ecomm-otel-prod-app"
   role = aws_iam_role.prod_app.name

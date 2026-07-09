@@ -1,0 +1,131 @@
+# EDOT Collector — prod host variant. Same pipeline as otel-collector.yaml
+# (OTLP ingestion + host metrics) plus an awscloudwatch receiver that polls
+# CloudWatch's GetMetricData API for this instance's own EC2 metrics —
+# agentless: no CloudWatch Agent daemon, just this collector's existing
+# container using the instance's IAM role (via IMDS) to pull AWS-native
+# telemetry for the EC2 host itself.
+#
+# Selected via COLLECTOR_CONFIG=otel-collector.prod.yaml (see docker-compose.yml).
+# Requires AWS_REGION and EC2_INSTANCE_ID in the environment — both written to
+# .env by infra/aws-prod/user_data.sh.tpl at boot.
+
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+
+  hostmetrics:
+    collection_interval: 60s
+    scrapers:
+      cpu: {}
+      memory: {}
+      load: {}
+      disk: {}
+      filesystem: {}
+      network: {}
+
+  # Polls CloudWatch's GetMetricData API — read-only, no agent on the host.
+  # Requires the instance role to have cloudwatch:GetMetricData + ListMetrics
+  # (see aws_iam_role_policy.cloudwatch_read in infra/aws-prod/ec2.tf).
+  awscloudwatch:
+    region: ${AWS_REGION}
+    metrics:
+      collection_interval: 5m
+      period: 5m
+      queries:
+        - namespace: AWS/EC2
+          metric_name: CPUUtilization
+          dimensions:
+            InstanceId: ${EC2_INSTANCE_ID}
+          stats: [Average, Maximum]
+        - namespace: AWS/EC2
+          metric_name: NetworkIn
+          dimensions:
+            InstanceId: ${EC2_INSTANCE_ID}
+          stats: [Average]
+        - namespace: AWS/EC2
+          metric_name: NetworkOut
+          dimensions:
+            InstanceId: ${EC2_INSTANCE_ID}
+          stats: [Average]
+        - namespace: AWS/EC2
+          metric_name: DiskReadBytes
+          dimensions:
+            InstanceId: ${EC2_INSTANCE_ID}
+          stats: [Average]
+        - namespace: AWS/EC2
+          metric_name: DiskWriteBytes
+          dimensions:
+            InstanceId: ${EC2_INSTANCE_ID}
+          stats: [Average]
+        - namespace: AWS/EC2
+          metric_name: StatusCheckFailed
+          dimensions:
+            InstanceId: ${EC2_INSTANCE_ID}
+          stats: [Maximum]
+
+processors:
+  batch:
+    timeout: 5s
+    send_batch_size: 1000
+
+  memory_limiter:
+    check_interval: 1s
+    limit_mib: 512
+
+  resource:
+    attributes:
+      - key: deployment.environment
+        value: prod
+        action: insert
+
+  # Adds host.name, os.type, host.arch to traces and app metrics so Kibana can
+  # correlate spans with host metrics collected by the Fleet-managed Elastic Agent.
+  # No host_metrics receiver needed — this is attribute enrichment only.
+  resourcedetection/system:
+    detectors: [system]
+    system:
+      hostname_sources: [os]
+    override: false
+
+  # Route logs into Kibana Streams' OTel-aware stream so field schema matches.
+  transform/logs-streams:
+    log_statements:
+      - context: resource
+        statements:
+          - set(attributes["elasticsearch.index"], "logs.otel")
+
+exporters:
+  # Primary: Elastic Cloud Serverless via managed OTLP (mOTLP) ingest endpoint
+  otlp_http/elastic:
+    endpoint: "${ELASTIC_INGEST_ENDPOINT}"
+    headers:
+      Authorization: "ApiKey ${ELASTIC_INGEST_API_KEY}"
+
+  debug:
+    verbosity: detailed
+
+extensions:
+  health_check:
+    endpoint: 0.0.0.0:13133
+  pprof:
+    endpoint: 0.0.0.0:1777
+
+service:
+  extensions: [health_check, pprof]
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [memory_limiter, resourcedetection/system, resource, batch]
+      exporters: [otlp_http/elastic, debug]
+    metrics:
+      receivers: [otlp, hostmetrics, awscloudwatch]
+      processors: [memory_limiter, resourcedetection/system, resource, batch]
+      exporters: [otlp_http/elastic, debug]
+    logs:
+      receivers: [otlp]
+      processors: [memory_limiter, resourcedetection/system, resource, transform/logs-streams, batch]
+      exporters: [otlp_http/elastic]

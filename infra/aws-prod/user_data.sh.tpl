@@ -24,6 +24,12 @@ git clone "${prod_repo_url}" /opt/ecomm-otel
 cd /opt/ecomm-otel
 git checkout "${prod_repo_ref}"
 
+# ── EC2 self-identification (IMDSv2) ─────────────────────────────────────────
+# Used to scope the collector's awscloudwatch receiver to this instance's own
+# EC2 metrics (InstanceId dimension) rather than the whole account.
+IMDS_TOKEN=$(curl -sX PUT "http://169.254.169.254/latest/api/token" -H "X-aws-ec2-metadata-token-ttl-seconds: 21600")
+EC2_INSTANCE_ID=$(curl -s -H "X-aws-ec2-metadata-token: $IMDS_TOKEN" "http://169.254.169.254/latest/meta-data/instance-id")
+
 # ── Runtime config ──────────────────────────────────────────────────────────────
 # Only what the collector + compose interpolation need. Docker Compose auto-loads
 # ./.env for variable substitution, so AWS_REGION flows into OTEL_RESOURCE_ATTRIBUTES.
@@ -32,6 +38,12 @@ ELASTIC_INGEST_ENDPOINT=${ingest_endpoint}
 ELASTIC_INGEST_API_KEY=${ingest_api_key}
 AWS_REGION=${aws_region}
 ENVEOF
+# Appended separately (not in the quoted heredoc above) — these come from the
+# instance itself at boot, not from Terraform template variables.
+{
+  echo "EC2_INSTANCE_ID=$EC2_INSTANCE_ID"
+  echo "COLLECTOR_CONFIG=otel-collector.prod.yaml"
+} >> /opt/ecomm-otel/.env
 chmod 600 /opt/ecomm-otel/.env
 
 # ── Bring up the prod stack (with load-generator for traffic) ───────────────────
