@@ -2130,16 +2130,22 @@ trigger_incident() {
     ( _run_autonomous_investigation >> "${ROOT_DIR}/.autonomous-sre.log" 2>&1 & disown )
   fi
 
-  # Post a deployment annotation to APM so the incident correlates to a "deploy event" on the timeline
+  # Post a deployment annotation to APM so the incident correlates to a "deploy event" on the timeline.
+  # service.environment must be set — the APM UI's annotation search filters by the
+  # selected environment, and annotations without it are invisible unless "All environments" is selected.
   if [[ -n "${KIBANA_URL:-}" && -n "${ELASTIC_INGEST_API_KEY:-}" ]]; then
-    local ANNO_TS
+    local ANNO_TS ANNO_STATUS
     ANNO_TS=$(date -u +"%Y-%m-%dT%H:%M:%S.000Z")
-    curl -s -o /dev/null -X POST "${KIBANA_URL}/api/apm/services/checkout-service/annotation" \
+    ANNO_STATUS=$(curl -s -o /dev/null -w "%{http_code}" -X POST "${KIBANA_URL}/api/apm/services/checkout-service/annotation" \
       -H "Authorization: ApiKey ${ELASTIC_INGEST_API_KEY}" \
       -H "Content-Type: application/json" \
       -H "kbn-xsrf: true" \
-      -d "{\"@timestamp\": \"${ANNO_TS}\", \"service\": {\"version\": \"2.4.1\"}, \"message\": \"Deploy: realtime_fraud_detection=true (PR #47 — FraudShield integration)\"}" \
-      && echo "  → Deployment annotation posted to APM (checkout-service v2.4.1)"
+      -d "{\"@timestamp\": \"${ANNO_TS}\", \"service\": {\"version\": \"2.4.1\", \"environment\": \"demo\"}, \"message\": \"Deploy: realtime_fraud_detection=true (PR #47 — FraudShield integration)\"}")
+    if [[ "${ANNO_STATUS}" == "200" ]]; then
+      echo "  → Deployment annotation posted to APM (checkout-service v2.4.1)"
+    else
+      echo "  ✗ Deployment annotation failed (HTTP ${ANNO_STATUS})" >&2
+    fi
   fi
 }
 
@@ -2150,16 +2156,21 @@ reset_demo() {
   # Clear profiling slow mode
   _ssm_run "rm -f /tmp/fraud_check_slow && echo profiling slow mode cleared"
 
-  # Post a "resolved" annotation so the timeline shows the rollback
+  # Post a "resolved" annotation so the timeline shows the rollback. service.environment
+  # must be set — see note in trigger_incident() on why the APM UI hides annotations without it.
   if [[ -n "${KIBANA_URL:-}" && -n "${ELASTIC_INGEST_API_KEY:-}" ]]; then
-    local ANNO_TS
+    local ANNO_TS ANNO_STATUS
     ANNO_TS=$(date -u +"%Y-%m-%dT%H:%M:%S.000Z")
-    curl -s -o /dev/null -X POST "${KIBANA_URL}/api/apm/services/checkout-service/annotation" \
+    ANNO_STATUS=$(curl -s -o /dev/null -w "%{http_code}" -X POST "${KIBANA_URL}/api/apm/services/checkout-service/annotation" \
       -H "Authorization: ApiKey ${ELASTIC_INGEST_API_KEY}" \
       -H "Content-Type: application/json" \
       -H "kbn-xsrf: true" \
-      -d "{\"@timestamp\": \"${ANNO_TS}\", \"service\": {\"version\": \"2.4.0\"}, \"message\": \"Rollback: realtime_fraud_detection=false (incident resolved)\"}" \
-      && echo "  → Rollback annotation posted to APM (checkout-service v2.4.0)"
+      -d "{\"@timestamp\": \"${ANNO_TS}\", \"service\": {\"version\": \"2.4.0\", \"environment\": \"demo\"}, \"message\": \"Rollback: realtime_fraud_detection=false (incident resolved)\"}")
+    if [[ "${ANNO_STATUS}" == "200" ]]; then
+      echo "  → Rollback annotation posted to APM (checkout-service v2.4.0)"
+    else
+      echo "  ✗ Rollback annotation failed (HTTP ${ANNO_STATUS})" >&2
+    fi
   fi
 
   echo "✓ Demo reset complete"
