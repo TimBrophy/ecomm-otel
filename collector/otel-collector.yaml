@@ -32,7 +32,7 @@ processors:
     attributes:
       - key: deployment.environment
         value: demo
-        action: upsert
+        action: insert
 
   # Adds host.name, os.type, host.arch to traces and app metrics so Kibana can
   # correlate spans with host metrics collected by the Fleet-managed Elastic Agent.
